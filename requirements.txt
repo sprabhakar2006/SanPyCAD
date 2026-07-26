@@ -1,0 +1,9 @@
+# These are the same dependencies openscad4.py already needs to import at
+# all -- if your library runs today, you already have them.
+numpy
+scipy
+sympy
+scikit-image
+
+# Optional, for a real desktop app window instead of opening a browser tab:
+pywebview
