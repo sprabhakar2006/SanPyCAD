@@ -115,14 +115,67 @@ Python package.)
 Either way, a window titled "SanPyCAD Brep" opens: a code editor on the
 left, a live 3D viewport on the right. Write a script, press **Render**
 (or Ctrl/Cmd+Enter), and it draws the model. The **Export** dropdown
-saves the current scene as STL, OBJ, SVG (a 2D isometric wireframe
-projection of the model's edges), or DXF (labeled honestly rather than
-as "DWG" -- true .dwg is AutoCAD's proprietary binary format and needs
-a paid SDK to write; DXF is the open interchange format AutoCAD and
-every other major CAD tool reads natively). These are all *tessellated*
-exports -- for exact B-rep STEP/BREP export, call `export_step()`/
-`export_brep()` directly in your script (see below); there's no toolbar
-button for that yet.
+saves the current scene as STL, OBJ, SVG, or DXF (labeled honestly
+rather than as "DWG" -- true .dwg is AutoCAD's proprietary binary
+format and needs a paid SDK to write; DXF is the open interchange
+format AutoCAD and every other major CAD tool reads natively). STL/OBJ/
+DXF are *tessellated* exports -- for exact B-rep STEP/BREP export, call
+`export_step()`/`export_brep()` directly in your script (see below);
+there's no toolbar button for that yet.
+
+The reverse direction works too: `import_step("part.step")`/
+`import_brep("part.brep")` read a file back in as a real B-rep Shape
+(build123d's own importers) -- a part made elsewhere, or one this app
+itself wrote out earlier -- and hand back something every other
+function here treats like any other shape: `union()`/`difference()` it
+against new geometry, `fillet()`/`chamfer()` its edges, or `split()` it
+with a `plane()` for a cutaway/cross-section view of what's inside
+(see `examples/21_import_and_section_step_library.py` for a working
+example that imports several .step files and shows each one with a
+quarter-section cut away). No toolbar button for import either yet --
+it's script-only for now, same as STEP/BREP export.
+
+SVG is different from the other three: it's a real multi-view
+**engineering drawing**, not a tessellated mesh dump -- FRONT/TOP/RIGHT/
+ISO views of the shown shape(s), computed with genuine hidden-line-
+removal on the actual B-rep geometry (OCCT's HLRBRep_Algo, via
+build123d's `Shape.project_to_viewport()`), laid out on one bordered
+sheet with a title block; edges hidden behind the surface from a given
+view draw dashed, visible edges solid, the standard drafting
+convention. Both need the shown shape(s) to be genuine B-rep (brep.py's
+own cube()/sphere()/etc, not the raw openscad4 mesh-bridge escape
+hatch) -- there's no HLR to compute otherwise. Scriptable directly too,
+if you want the file written without going through the toolbar at all:
+`export_drawing_svg(shape, "part_drawing.svg", part_name="Bracket")`
+(see `technical_drawing_views()`'s own docstring in `brep.py` for the
+lower-level version that returns raw view data instead of a finished
+SVG, and for what's honestly still unverified about this against a
+real build123d install -- HLR-based drawings are new here).
+
+The toolbar's own **Drawing** button opens something more than a flat
+file, though: an interactive 2D Drawing tab (swapping out the 3D
+viewport, same window) showing those same 4 views live, where you can
+click to add real, measured dimensions before downloading -- pick a
+tool (Linear, Radius/&#8960;, Angle, or Center Distance), then click
+points/circles/edges on the drawing:
+- **Linear** -- click 2 points (snaps to the nearest edge endpoint) for
+  a straight-line distance dimension.
+- **Radius/&#8960;** -- click a circular edge/hole for a radius +
+  diameter callout.
+- **Angle** -- click 2 straight edges for the angle between them.
+- **Center Distance** -- click 2 circular edges/holes for the distance
+  between their centers (e.g. bolt-hole spacing).
+
+Every dimension is computed in the part's own real-world units (not
+screen pixels) by fitting a circle to a clicked hole's own sampled
+points, or measuring directly between real coordinates -- accurate
+regardless of how zoomed in the drawing looks. Click an existing
+dimension (with the Select tool) to highlight it, then **Delete** (or
+press Delete/Backspace) to remove it; **Clear All** removes every
+dimension on the sheet. **Download SVG** saves the sheet exactly as
+shown, dimensions included -- there's no separate "bake in the
+dimensions" step, since they're already real SVG elements in what gets
+downloaded.
 
 Note that Export is about the *rendered geometry* (STL/OBJ/etc.), not
 the script that produced it. To save your actual design so you can
@@ -282,6 +335,20 @@ viewer, so anything returned from `color()` can no longer be fed to
 `volume()`/`fillet()`/`chamfer()`/`export_step()`/further booleans.
 `print()` and `echo()` both show up in the console panel.
 
+To measure a shape: **`volume(x)`** (exact enclosed volume) and
+**`area(x)`** (total surface area, every face summed) are both plain
+build123d properties exposed as functions. **`bb(x)`** gives its
+bounding-box size `[w, h, d]` -- works on a real B-rep shape now, not
+just a point list (use `x.bounding_box()` directly, build123d's own
+method, if you need `.min`/`.max`/`.center()` too, not just the
+overall size). **`projected_area(x, direction)`** is different from
+`area()` -- it's the "shadow" area `x` would cast looking straight
+along `direction` (e.g. `[0, 0, -1]` from above), built on the same
+hidden-line-removal the engineering-drawing feature uses, correctly
+netting out any holes visible from that direction (a flange's bolt
+holes, a pipe viewed down its axis) rather than just measuring the
+outer boundary.
+
 In the editor, any bare expression on its own line gets its value
 echoed to the console panel, the same way a Jupyter cell auto-displays
 whatever you type -- so `len(a)`, `volume(a)`, `type(a)`, or any other
@@ -364,8 +431,10 @@ stale/dangling, not links to files that still exist.
   function through before landing here).
 - No STEP/BREP export button in the toolbar yet -- call
   `export_step()`/`export_brep()` directly in your script for now (see
-  `examples/05_export.py`). The Export dropdown's STL/OBJ/SVG/DXF are
-  all tessellated exports.
+  `examples/05_export.py`). The Export dropdown's STL/OBJ/DXF are all
+  tessellated exports; SVG is the one exception -- a real hidden-line-
+  removed engineering drawing computed straight from the B-rep shape,
+  not a tessellation (see above).
 - No mesh/STL import -- there's no B-rep equivalent of "reconstruct
   exact analytic surfaces from an arbitrary triangle mesh," so this
   isn't a gap that can be closed the same way the mesh SanPyCAD apps'
