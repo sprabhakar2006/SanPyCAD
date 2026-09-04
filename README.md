@@ -1,47 +1,28 @@
-# SanPyCAD Brep
+# SanPyCAD
 
-The **B-rep-first copy of SanPyCAD**: unlike the mesh-based SanPyCAD apps
-(everything there ends up as triangle soup), every shape here is a real
-boundary-representation (B-rep) solid -- exact analytic/NURBS surfaces,
-exact booleans, real fillets -- built on
-[build123d](https://build123d.readthedocs.io/), a Python CAD library on
-top of OpenCASCADE Technology (OCCT), the same open-source B-rep kernel
-FreeCAD itself uses. There is no mesh/triangle-soup geometry engine
-anywhere in this app: no OpenSCAD-text-DSL mode, no mesh CSG, no mesh
-import. Its window title, launcher filenames, and log files are all
-labeled "SanPyCAD Brep" specifically so it's never confused with the
-mesh-based SanPyCAD apps if you have more than one installed side by
-side.
-
-The 3D viewer still renders triangles -- that's all WebGL can ever draw
--- but they're a disposable tessellation generated just for display; the
-actual model stays exact B-rep the whole time.
+A standalone desktop app that lets you write OpenSCAD-style scripts (or
+plain Python) and see them rendered live in 3D — built on top of your
+`ocad.py` geometry library, with automatic use of the real OpenSCAD
+boolean engine for exact CSG when it's installed.
 
 It opens as its own application window (via `pywebview`), not "a web app
-you have to navigate to" -- under the hood it runs a small local backend
+you have to navigate to" — under the hood it runs a small local backend
 (plain Python, no Flask) and a 3D viewer, but you just double-click a
 shortcut (or run one command) and a window opens.
 
 ## Setup
 
-This app's one hard dependency is `build123d` itself -- without it,
-every script fails with a clear `pip install build123d` error (the
-toolbar's status badge also tells you at a glance whether it's
-installed). `numpy` is needed too, for the viewer/export triangle math.
-
-```bash
-pip install numpy build123d
-```
-
-Optionally, for a real app window instead of a browser tab:
+You already have the packages `ocad.py` needs (`numpy`, `scipy`,
+`sympy`, `scikit-image`) since the library requires them to import at all.
+This app adds one optional package, for a real app window instead of a
+browser tab:
 
 ```bash
 pip install pywebview
 ```
 
-(If you skip pywebview, the app still works -- it just opens in your
-default browser instead of its own window. Everything else is
-identical.)
+(If you skip this, the app still works — it just opens in your default
+browser instead of its own window. Everything else is identical.)
 
 On Windows, pywebview's native-window mode needs the Microsoft Edge
 WebView2 Runtime -- already preinstalled on any normal, up-to-date
@@ -51,45 +32,48 @@ stripped-down Windows image that's missing it, install it from
 (or just skip it -- the app falls back to your default browser exactly
 as described above).
 
+If the real **OpenSCAD application** is installed, it's detected and used
+automatically for exact boolean CSG (see below) — no configuration
+needed, nothing to install for this app specifically. If it isn't
+installed, the app still works standalone with an approximate fallback.
+
 ## Run it
 
-**macOS: double-click `SanPyCAD Brep.app`** (in this same folder) -- no
-Terminal, no typing a command. If something goes wrong (e.g. Python
-isn't installed, build123d is missing, or the app crashes on startup),
-it shows an alert dialog rather than failing silently, and logs details
-to `SanPyCAD-Brep.log` in this folder.
+**macOS: double-click `SanPyCAD.app`** (in this same folder) — no
+Terminal, no typing a command. If something goes wrong (e.g. Python isn't
+installed or the app crashes on startup), it shows an alert dialog rather
+than failing silently, and logs details to `SanPyCAD.log` in this folder.
 
-**First time only, if you downloaded/unzipped this folder:**
-double-click `Fix Mac Security Warning.command` once, *before* the
-first time you open `SanPyCAD Brep.app`. macOS flags every file from a
-downloaded zip as quarantined, and if an app still has that flag on its
-very first launch, Gatekeeper runs it from an isolated, read-only,
-randomly-named copy cut off from the rest of this folder ("App
-Translocation") -- SanPyCAD Brep.app looks for `app.py` right next to
-itself, so under that isolation it genuinely can't find it, even though
-nothing was actually moved. Running `Fix Mac Security Warning.command`
-once clears the flag so this never happens; SanPyCAD Brep.app itself
-now also detects this specific situation and tells you to run it if you
-hit it without having run it first. (macOS may still show its own
-"unidentified developer" warning the first time you run either file,
-since this app isn't Apple-notarized -- that's expected and safe to
-allow; right-click > Open bypasses it if double-clicking refuses.)
+**First time only, if you downloaded/unzipped this folder:** double-click
+`Fix Mac Security Warning.command` once, *before* the first time you open
+`SanPyCAD.app`. macOS flags every file from a downloaded zip as
+quarantined, and if an app still has that flag on its very first launch,
+Gatekeeper runs it from an isolated, read-only, randomly-named copy cut
+off from the rest of this folder ("App Translocation") — SanPyCAD.app
+looks for `app.py` right next to itself, so under that isolation it
+genuinely can't find it, even though nothing was actually moved. Running
+`Fix Mac Security Warning.command` once clears the flag so this never
+happens; SanPyCAD.app itself now also detects this specific situation and
+tells you to run it if you hit it without having run it first. (macOS may
+still show its own "unidentified developer" warning the first time you
+run either file, since SanPyCAD isn't Apple-notarized — that's expected
+and safe to allow; right-click > Open bypasses it if double-clicking
+refuses.)
 
-**Windows: double-click `SanPyCAD Brep.vbs`** (in this same folder) --
-the equivalent of `SanPyCAD Brep.app`: no console window, no typing a
-command. It finds a Python 3 install that actually has
-`numpy`/`build123d` (checking several common install locations, not
-just whatever's first on PATH), and launches the app with no visible
-console (pywebview's own app window still opens normally). If something
-goes wrong, it shows a message box instead of a raw traceback, and logs
-details to `SanPyCAD-Brep.log` in this folder, same as the macOS
-version. If your machine's security policy blocks `.vbs` files from
-running (some locked-down/corporate Windows setups do, since VBScript
-has a history of malware abuse), **double-click
-`run_sanpycad_brep.bat`** instead -- same idea, just with a visible
-console window and without the pre-flight dependency check (if a
-package is missing, Python's own error prints directly into that
-window).
+**Windows: double-click `SanPyCAD.vbs`** (in this same folder) — the
+equivalent of `SanPyCAD.app`: no console window, no typing a command. It
+finds a Python 3 install that actually has `numpy`/`scipy`/`sympy`/
+`scikit-image` (checking several common install locations, not just
+whatever's first on PATH), and launches the app with no visible console
+(pywebview's own app window still opens normally). If something goes
+wrong, it shows a message box instead of a raw traceback, and logs
+details to `SanPyCAD.log` in this folder, same as the macOS version.
+If your machine's security policy blocks `.vbs` files from running (some
+locked-down/corporate Windows setups do, since VBScript has a history of
+malware abuse), **double-click `run_sanpycad.bat`** instead — same idea,
+just with a visible console window and without the pre-flight dependency
+check (if a package is missing, Python's own error prints directly into
+that window).
 
 If you'd rather run it from the command line (or you're on Linux, where
 neither of the above applies):
@@ -99,128 +83,137 @@ cd <this project folder>
 python3 app.py          # Windows: python app.py
 ```
 
-**Internet access:** SanPyCAD Brep's code editor and 3D viewer are
-built on CodeMirror and Three.js. The very first time you run the app,
-it quietly downloads its own copy of those (into `frontend/vendor/`) in
-the background so every launch after that needs zero internet access --
-the app is fully usable immediately either way (it falls back to
-loading those from a CDN live if the local copies aren't there yet).
-If you're setting this up on a machine with no internet access at all,
-run it once on a machine that does have internet first, then copy the
-whole project folder (including the now-populated `frontend/vendor/`)
-over. (This is separate from `build123d` itself, which does need to be
-`pip install`ed with internet access at least once, same as any other
-Python package.)
+**Internet access:** SanPyCAD's code editor and 3D viewer are built on
+CodeMirror and Three.js. The very first time you run the app, it quietly
+downloads its own copy of those (into `frontend/vendor/`) in the
+background so every launch after that needs zero internet access — the
+app is fully usable immediately either way (it falls back to loading
+those from a CDN live if the local copies aren't there yet). If you're
+setting this up on a machine with no internet access at all, run it once
+on a machine that does have internet first, then copy the whole project
+folder (including the now-populated `frontend/vendor/`) over.
 
-Either way, a window titled "SanPyCAD Brep" opens: a code editor on the
-left, a live 3D viewport on the right. Write a script, press **Render**
-(or Ctrl/Cmd+Enter), and it draws the model. The **Export** dropdown
-saves the current scene as STL, OBJ, SVG, or DXF (labeled honestly
-rather than as "DWG" -- true .dwg is AutoCAD's proprietary binary
-format and needs a paid SDK to write; DXF is the open interchange
-format AutoCAD and every other major CAD tool reads natively). STL/OBJ/
-DXF are *tessellated* exports -- for exact B-rep STEP/BREP export, call
-`export_step()`/`export_brep()` directly in your script (see below);
-there's no toolbar button for that yet.
+Either way, a window titled "SanPyCAD" opens: a code editor on the left,
+a live 3D viewport on the right. Write a script, press **Render** (or
+Ctrl/Cmd+Enter), and it draws the model. The **Export** dropdown (next to
+the OpenSCAD-style/Python toggle) saves the current scene as STL, OBJ,
+SVG (a 2D isometric wireframe projection of the model's edges), or DXF
+(labeled honestly rather than as "DWG" -- true .dwg is AutoCAD's
+proprietary binary format and needs a paid SDK to write; DXF is the open
+interchange format AutoCAD and every other major CAD tool reads
+natively, so it covers the same "get this into AutoCAD" goal). The
+**Import** button loads an external STL/OBJ/OFF mesh file, or an SVG 2D
+shape, and inserts a working `import(...)` snippet (or, in Python mode,
+`import_mesh(...)`/`import_profile(...)`) at the cursor -- the same idea
+as OpenSCAD's own `import()`, just with a file picker instead of typing
+the path by hand. SVG is a 2D format, same as `circle()`/`square()`/
+`polygon()`, so it only actually produces something inside
+`linear_extrude()`/`rotate_extrude()` -- the inserted snippet already
+wraps it that way. Files can also be referred to by filename alone if
+dropped into the `imports/` folder next to `app.py` (created
+automatically the first time it's needed).
 
-The reverse direction works too: `import_step("part.step")`/
-`import_brep("part.brep")` read a file back in as a real B-rep Shape
-(build123d's own importers) -- a part made elsewhere, or one this app
-itself wrote out earlier -- and hand back something every other
-function here treats like any other shape: `union()`/`difference()` it
-against new geometry, `fillet()`/`chamfer()` its edges, or `split()` it
-with a `plane()` for a cutaway/cross-section view of what's inside
-(see `examples/21_import_and_section_step_library.py` for a working
-example that imports several .step files and shows each one with a
-quarter-section cut away). No toolbar button for import either yet --
-it's script-only for now, same as STEP/BREP export.
+Note that Export/Import are about the *rendered geometry* (STL/OBJ/etc.),
+not the script that produced it. To save your actual design so you can
+close SanPyCAD and reopen it later, use **Save** (writes to whatever file
+you last saved to/opened from -- a native Save dialog the very first
+time), **Save As** (always prompts for a new file), or **Open** (loads a
+previously saved script back into the editor, switching between
+OpenSCAD-style and Python mode automatically based on whether it's a
+`.scad` or `.py` file). Ctrl/Cmd+S is the same as clicking Save. This
+writes plain `.py`/`.scad` text files -- ordinary source code, openable
+in any text editor, not a proprietary format.
 
-SVG is different from the other three: it's a real multi-view
-**engineering drawing**, not a tessellated mesh dump -- FRONT/TOP/RIGHT/
-ISO views of the shown shape(s), computed with genuine hidden-line-
-removal on the actual B-rep geometry (OCCT's HLRBRep_Algo, via
-build123d's `Shape.project_to_viewport()`), laid out on one bordered
-sheet with a title block; edges hidden behind the surface from a given
-view draw dashed, visible edges solid, the standard drafting
-convention. Both need the shown shape(s) to be genuine B-rep (brep.py's
-own cube()/sphere()/etc, not the raw openscad4 mesh-bridge escape
-hatch) -- there's no HLR to compute otherwise. Scriptable directly too,
-if you want the file written without going through the toolbar at all:
-`export_drawing_svg(shape, "part_drawing.svg", part_name="Bracket")`
-(see `technical_drawing_views()`'s own docstring in `brep.py` for the
-lower-level version that returns raw view data instead of a finished
-SVG, and for what's honestly still unverified about this against a
-real build123d install -- HLR-based drawings are new here).
+The **Examples** dropdown in the toolbar has a few starter scripts. The
+toolbar also has a toggle between the two ways to write a
+script (see below) — switching keeps whatever you'd written in each one
+separately, so you can flip back and forth. The **Orthographic** checkbox
+switches the 3D viewport between perspective and orthographic (no
+vanishing-point distortion) projection, keeping your current view.
+Rotate/zoom/pan stop exactly where you release them -- no drift/momentum
+to fight when lining up a precise view, and pan/zoom speed is tuned to
+match OpenSCAD's own feel. The **Axes** checkbox toggles OpenSCAD's own
+two-part axis display: a small colored X/Y/Z cross through the origin,
+and a separate small x/y/z indicator fixed in the viewport's lower-left
+corner that tracks the camera's current orientation. There's no
+reference ground grid or numbered ruler ticks, matching OpenSCAD's own
+Show Axes (it doesn't draw those either). The **Edges** checkbox
+outlines every triangle edge in the model, the same as OpenSCAD's View >
+Show Edges, handy for seeing the
+underlying mesh structure. The **View** dropdown snaps the camera to a
+standard angle -- Top, Bottom, Front, Back, Left, Right, or Diagonal --
+the same set OpenSCAD's own View menu offers, keeping your current
+zoom/pan instead of also re-fitting the model. **Fit** re-centers and
+zooms the camera to frame the current model -- since the render pipeline
+otherwise never touches your camera position after the very first render
+(scrolling, panning, and orbiting are always exactly where you left
+them, on purpose), this is how you get back if you've scrolled/panned
+the model out of view entirely -- the same idea as OpenSCAD's View >
+Reset View. The editor pane and the
+3D viewport are resizable -- drag the thin bar between them (and the one
+between the editor and the console panel) to adjust how much space each
+gets. The **Measure** dropdown (Off/Vertices/Edges) lets you click on the
+model to measure it, the same idea as OpenSCAD's own Measure tool:
+in **Vertices** mode, clicking snaps to the nearest corner of whatever
+face you click (marked with a small dot), and once two are picked shows
+the distance between them (plus its x/y/z components); in **Edges**
+mode, clicking selects a whole edge (highlighted; this temporarily turns
+the Edges overlay on if it was off, so there's something to click),
+and once two are picked shows each edge's length, the angle between
+them (always the acute 0-90 deg angle, regardless of which way each
+edge happens to be wound internally), and the shortest distance between
+them (handles two edges that don't actually touch). A click is only
+treated as a pick if the pointer barely moved between press and release
+-- drag as usual to orbit, click to measure. **Clear** resets the
+current selection, and picking a third point/edge automatically starts
+a new selection. In Python mode, if a picked vertex can be traced back
+to a specific point of a script variable, the panel also shows exactly
+which one -- e.g. `sol1[0][10]` for the 11th point of the 1st cross-
+section of `sol1` -- so you know exactly how to reference that point
+back in your own script. This works for both ways of showing a shape:
+`show()`ing (or `color()`ing) a raw shape directly (not a `union()`/
+etc result, which has no such 1:1 correspondence), and the
+`fo(f'''{swp(sol1)}...''')` workflow -- `swp()`/`swp_c()`/`swp_surf()`/
+`swp_triangles()` are watched for calls on a named variable, and their
+points are matched (with a small tolerance, since going through real
+OpenSCAD's STL export loses exact bit-for-bit precision) against
+whatever vertices come back. In the
+editor, brackets/quotes auto-close as you type, and (same as JupyterLab)
+**Tab** brings up autocomplete when you're mid-identifier (every
+`ocad.py` function name in Python mode, or the language's keywords in
+OpenSCAD-style mode, plus whatever identifiers you've already typed in the
+current script) and otherwise just indents/inserts a tab as normal. It
+matches anywhere in the name, not just the start -- typing `extr` finds
+`linear_extrude`/`rotate_extrude`/`path_extrude_open`/etc, not just names
+that begin with those letters (matches that do start with what you typed
+are still listed first). **Shift+Tab** on a function name shows its
+signature and docstring in a popup, also JupyterLab style (works for
+every `ocad.py` function and this app's own `union()`/`show()`/etc
+in Python mode; OpenSCAD-style mode gets a short built-in reference for
+its primitives/keywords since those aren't real Python functions with
+docstrings to pull from). The toolbar's **📖 Reference** button opens a
+searchable browser over that same documentation — every one of
+`ocad.py`'s 600+ functions plus the DSL's built-in primitives/
+keywords, all in one alphabetical list — so you can look something up
+by name or just search for a word in its description (e.g. searching
+"offset" turns up every offset-related function at once) without
+already having it typed in the editor the way Shift+Tab needs. (This
+list deliberately excludes the ~500 numpy/scipy names that are only
+technically visible because `ocad.py` opens with `from numpy
+import *` — those aren't functions the library actually defines, and
+including them would bury the real ones alphabetically.) The **Wrap** checkbox toggles line-wrapping in
+the editor, for long lines (e.g. a big embedded points list) without
+scrolling sideways to read them.
 
-The toolbar's own **Drawing** button opens something more than a flat
-file, though: an interactive 2D Drawing tab (swapping out the 3D
-viewport, same window) showing those same 4 views live, where you can
-click to add real, measured dimensions before downloading -- pick a
-tool (Linear, Radius/&#8960;, Angle, or Center Distance), then click
-points/circles/edges on the drawing:
-- **Linear** -- click 2 points (snaps to the nearest edge endpoint) for
-  a straight-line distance dimension.
-- **Radius/&#8960;** -- click a circular edge/hole for a radius +
-  diameter callout.
-- **Angle** -- click 2 straight edges for the angle between them.
-- **Center Distance** -- click 2 circular edges/holes for the distance
-  between their centers (e.g. bolt-hole spacing).
+## Two ways to write a script
 
-Every dimension is computed in the part's own real-world units (not
-screen pixels) by fitting a circle to a clicked hole's own sampled
-points, or measuring directly between real coordinates -- accurate
-regardless of how zoomed in the drawing looks. Click an existing
-dimension (with the Select tool) to highlight it, then **Delete** (or
-press Delete/Backspace) to remove it; **Clear All** removes every
-dimension on the sheet. **Download SVG** saves the sheet exactly as
-shown, dimensions included -- there's no separate "bake in the
-dimensions" step, since they're already real SVG elements in what gets
-downloaded.
+**OpenSCAD-style** — a small text language modeled on OpenSCAD's own
+syntax (`cube([10,10,10]); difference() { ... }`), described in full
+below. Good if you think in OpenSCAD terms already, or want something
+closer to a `.scad` file.
 
-Note that Export is about the *rendered geometry* (STL/OBJ/etc.), not
-the script that produced it. To save your actual design so you can
-close SanPyCAD Brep and reopen it later, use **Save** (writes to
-whatever file you last saved to/opened from -- a native Save dialog the
-very first time), **Save As** (always prompts for a new file), or
-**Open** (loads a previously saved `.py` script back into the editor).
-Ctrl/Cmd+S is the same as clicking Save. This writes plain `.py` text
-files -- ordinary source code, openable in any text editor, not a
-proprietary format.
-
-The **Examples** dropdown in the toolbar has a few starter scripts (see
-`examples/` below). The **Orthographic** checkbox switches the 3D
-viewport between perspective and orthographic (no vanishing-point
-distortion) projection, keeping your current view. Rotate/zoom/pan stop
-exactly where you release them -- no drift/momentum to fight when
-lining up a precise view. The **Axes** checkbox toggles a small colored
-X/Y/Z cross through the origin plus a small orientation indicator in
-the viewport's lower-left corner. The **Edges** checkbox outlines every
-triangle edge of the *display tessellation* -- handy for a rough sense
-of the surface, but this is the viewer's triangle mesh, not the B-rep
-model's real edges/faces (see `show_edges()` below for that). The
-**View** dropdown snaps the camera to a standard angle -- Top, Bottom,
-Front, Back, Left, Right, or Diagonal -- keeping your current zoom/pan.
-**Fit** re-centers and zooms the camera to frame the current model. The
-editor pane and the 3D viewport are resizable -- drag the thin bar
-between them (and the one between the editor and the console panel).
-The **Measure** dropdown (Off/Vertices/Edges) lets you click on the
-model to measure it: in **Vertices** mode, clicking snaps to the
-nearest corner of whatever face you click, and once two are picked
-shows the distance between them; in **Edges** mode, clicking selects a
-whole edge, and once two are picked shows each edge's length, the angle
-between them, and the shortest distance between them. In the editor,
-brackets/quotes auto-close as you type, and (JupyterLab-style) **Tab**
-brings up autocomplete when you're mid-identifier (every function
-brep.py exposes, plus whatever identifiers you've already typed) and
-otherwise indents as normal -- it matches anywhere in the name, not
-just the start. **Shift+Tab** on a function name shows its signature
-and docstring in a popup. The toolbar's **📖 Reference** button opens a
-searchable browser over that same documentation. The **Wrap** checkbox
-toggles line-wrapping in the editor.
-
-## Writing a script
-
-Plain Python, calling brep.py's functions directly:
+**Python** — plain Python that calls your `ocad.py` functions
+directly, the same way you already write it in a notebook:
 
 ```python
 a = cube([20, 20, 10], center=True)
@@ -228,237 +221,325 @@ b = cylinder(r=6, h=20, center=True)
 show(difference(a, b))
 ```
 
-`cube()`/`box()`/`cylinder()`/`sphere()`/`circle()`/`square()`/
-`polygon()`/`translate()`/`rotate()`/`rot()`/`mirror()`/`scale()`/
-`linear_extrude()`/`rotate_extrude()`/`sweep_sec2path()`/`offset()`/
-`union()`/`difference()`/`intersection()`/`hull()`/`fillet()`/
-`chamfer()` all build/combine real build123d B-rep solids -- see
-`examples/` for one focused script per group of these. `turtle2d()`/
-`turtle3d()` turn a list of relative offsets into absolute points
-(handy for building a `polygon()` outline or a `sweep_sec2path()` path
-by hand); `cr2dt()`/`cr3dt()` do the same but round each corner with a
-fillet arc of a per-point radius, for a rounded-rectangle-style
-profile or a pre-rounded sweep path. `offset(shape, amount)` grows
-(positive) or shrinks (negative) a 2D profile's outline, or shells a
-3D solid into a hollow shape (optionally leaving some faces open via
-`openings=`) -- a thin wrapper around build123d's own native
-`offset()`, the same "lean on OCCT rather than hand-roll it"
-reasoning as `sweep_sec2path()`. `volume(shape)`
-returns the shape's exact enclosed volume (computed by OCCT, not a
-discretized estimate). `to_mesh(shape)` tessellates a shape into `[V,
-F]` (the same convention used throughout this project's mesh apps, if
-you ever need that form).
+Instead of `fo(f''' ... ''')` writing a `.scad` file for real OpenSCAD to
+render, call **`show(x)`** on whatever shape(s) you want drawn in the app
+(if a script has exactly one shape-like variable and never calls
+`show()`, that one gets shown automatically — anything more ambiguous
+than that, you need to call `show()` explicitly). `union()`,
+`difference()`, `intersection()`, and `hull()` are ordinary functions here
+— they take one or more shapes (a raw value straight out of
+`cube()`/`sphere()`/`cylinder()`/etc, or the result of another
+`union()`/`difference()`/etc call) and run them through the same CSG
+engine as the OpenSCAD-style mode. `color(x, "red", alpha=0.5)` tags a
+shape with a color. `print()` and `echo()` both show up in the console
+panel. Everything else — `translate()`, `rot()`, `scl3d()`, loops,
+variables, helper functions you define — is just normal Python calling
+your normal library, no new syntax to learn.
 
-On top of that, brep.py has a growing **core point-list/vector-math
-toolkit** ported from openscad4.py (the mesh-based SanPyCAD apps'
-underlying library, which has ~580 functions of this kind in total --
-this first batch covers ~36 of the most broadly useful ones, reimplemented
-from scratch as plain Python, not ported line-for-line): arcs and circles
-through 2 or 3 points (`arc_2p`/`cir_2p`/`arc_3p`/`cir_3p`/`cp_3p`/
-`arc_2p_3d`), line/vector math (`l_len`/`l_lenv`/`mid_point`/
-`line_as_vector`/`line_as_unit_vector`/`seg`/`flip`), angles and
-intersections (`ang3points`/`ang_2lineccw`/`ang_2linecw`/`i_p2d`/
-`distanceOfPointFromLine`/`perpendicularProjectionOfPointOnLine`),
-mirroring and rotating point lists (`mirror_point`/`mirror_line`/
-`rot2d`), a circle-to-circle tangent line (`tcct`), a single-corner
-fillet (`fillet3points`), cleanup/sorting (`remove_extra_points`/
-`min_d_points`/`sort_points`), a 2D convex hull (`convex_hull`),
-plane/normal math (`normal_vector`/`equation_of_plane`), bounding
-boxes/centroids (`bb`/`bb2d`/`cog`), and Bezier/B-spline curves
-(`bezier`/`bspline_open`/`bspline_closed`) -- see
-`examples/10_core_toolkit.py` and each function's own docstring
-(Shift+Tab) for details. A handful of related functions (path/polygon
-offset, line-circle fillets, the more exotic derived-curve smoothers)
-need more careful follow-up work and aren't ported yet.
+One name is intentionally shadowed: `ocad.py` already has its own
+`union()` (2D pattern generation, unrelated to CSG); inside a Python-mode
+script the bare name `union` refers to the CSG version instead, since
+that's what you want when composing shapes here. The original is still
+reachable as `ocad.union(...)`.
 
-`points(pts, d=0.5, shape="cube")` drops a small marker at every point
-in a bare 2D/3D point list -- for checking where a curve's control
-points or a hand-built path's points actually land before/after
-extruding or sweeping it -- and `p_line3d(path, d=1, rec=0, closed=0)`
-turns a bare 3D point list straight into a tube/rope solid (capsule
-segments fused end to end, real B-rep), no sweep_sec2path()-style 2D-
-section-and-path setup needed. Both are openscad4.py's own points()/
-p_line3d() modules, ported -- see `examples/12_points_pline3d.py`.
+`import_mesh("file.stl")` loads an external STL/OBJ/OFF file as a shape
+usable with `union()`/`color()`/`show()`/etc -- Python mode's equivalent
+of OpenSCAD's `import()` (named `import_mesh` instead, since `import` is
+a reserved word in Python). `import_profile("file.svg")` is the 2D
+counterpart -- returns a plain `[[x,y], ...]` point list, the same thing
+`circle()`/`square()` return, so it plugs straight into
+`linear_extrude()`/`rotate_extrude()`, but only gives you the single
+largest shape in the file. `import_profiles("file.svg")` (plural) returns
+a list of *every* separate closed shape instead, for multi-part artwork:
 
-A third batch rounds out the core-geometry side of openscad4.py:
-`plane(normal, size, intercept)` (a flat reference Face at any
-orientation), `sinewave()`/`cosinewave()` (2D point lists tracing a
-sine/cosine curve), `loft(*sections)` (a solid blended smoothly
-through a stack of positioned 2D cross-sections -- build123d's own
-native loft, real B-rep, not a stack of thin slices), `helix(radius,
-pitch, turns)` (an exact helical curve -- feed it to
-`sweep_sec2path()` for a coil spring or screw thread),
-`interp_spline(points, closed)` (a curve that passes EXACTLY through
-every given point, unlike `bezier()`/`bspline_open()`), `s_int1(points,
-closed)` (every point where a closed point-list loop crosses itself),
-`tangent_arc(a, b, radius, side)` (an arc tangent to two
-circles/lines -- covers openscad4.py's whole two_cir_tarc()/
-fillet_line_circle() family in one call via build123d's native
-ConstrainedArcs), and `project_curve_on_face(curve, target,
-direction)` (exact B-rep projection of a curve onto a surface, not a
-nearest-point search over a triangulated approximation). See
-`examples/13_planes_and_waves.py`, `14_loft_and_helix.py`, and
-`15_intersections_and_tangent_arcs.py`.
+```python
+profiles = import_profiles("flower.svg")
+show(union(*[linear_extrude(p, h=5) for p in profiles]))
+```
 
-Not every openscad4.py function in this family made the cut.
-`concave_hull()` was attempted and dropped -- a naive point-list
-algorithm turned out to be genuinely unreliable (verified wrong on a
-simple test case), and getting it right needs more careful work than
-was worth doing on faith. `wrap_around()`/wrap-a-profile-around-an-
-arbitrary-path and `prism()`/`swp_prism_h()`-style stacked-offset-
-section building were also left out, but not because they're missing
-capability -- their whole job is already covered better by
-`sweep_sec2path()` and `loft()`, both real B-rep the whole way, so
-every real-world example below that would have used them uses one of
-those instead. `o_solid()`/`surround()` are still genuinely unported.
-`honeycomb(r, n1, n2)` (a hex-grid of cell outlines) and
-`point_in_polygon(point, poly)` (ray-casting containment test) *were*
-added, once the real-world examples below turned out to need them --
-see `examples/17_honeycomb.py`.
-
-The real-world part examples (`16` through `37` below) cover bolts,
-flanges, a lamp, a ball bearing, a coil spring, knots, a drill bit, a
-cam, a bottle, a handling trolley, and more -- ported from
-openscad4.py's real-world project files. Two things were left out on
-purpose: `car_seat` (genuinely mesh-native, no clean B-rep
-equivalent), and the marching-cubes/hand-rolled-fillet cluster (13
-files that all reduce to "just call the real `fillet()`/`chamfer()`
-here instead" -- nothing new to build). Ask if you want either
-pursued next.
-
-Call **`show(x)`** on whatever shape(s) you want drawn in the app (if a
-script has exactly one shape-like variable and never calls `show()`,
-that one is shown automatically). `color(x, "red", alpha=0.5)` tags a
-shape with a color for display -- apply it *last*, right before
-`show()`, since (like `show()`) it tessellates the shape for the
-viewer, so anything returned from `color()` can no longer be fed to
-`volume()`/`fillet()`/`chamfer()`/`export_step()`/further booleans.
-`print()` and `echo()` both show up in the console panel.
-
-To measure a shape: **`volume(x)`** (exact enclosed volume) and
-**`area(x)`** (total surface area, every face summed) are both plain
-build123d properties exposed as functions. **`bb(x)`** gives its
-bounding-box size `[w, h, d]` -- works on a real B-rep shape now, not
-just a point list (use `x.bounding_box()` directly, build123d's own
-method, if you need `.min`/`.max`/`.center()` too, not just the
-overall size). **`projected_area(x, direction)`** is different from
-`area()` -- it's the "shadow" area `x` would cast looking straight
-along `direction` (e.g. `[0, 0, -1]` from above), built on the same
-hidden-line-removal the engineering-drawing feature uses, correctly
-netting out any holes visible from that direction (a flange's bolt
-holes, a pipe viewed down its axis) rather than just measuring the
-outer boundary.
-
-In the editor, any bare expression on its own line gets its value
+In Python mode, any bare expression on its own line gets its value
 echoed to the console panel, the same way a Jupyter cell auto-displays
-whatever you type -- so `len(a)`, `volume(a)`, `type(a)`, or any other
+whatever you type — so `len(a)`, `a.shape`, `type(a)`, or any other
 one-off check can just be typed on its own line without wrapping it in
-`print()`/`echo()`. (`None` and shape values are quietly skipped so
-this doesn't spam the console with the `show(x)` calls you already
-have.)
+`print()`/`echo()`:
 
-**Variables persist between runs, Jupyter-style.** The app keeps a
-kernel-like namespace alive across Render clicks: whatever your script
-assigns is still there the next time you press Render, even if you've
-since commented out the line that computed it -- compute something
-heavy once, then comment that line out and keep iterating on everything
-downstream of it without paying for the heavy part again. The toolbar
-shows a **N vars in memory** indicator (hover it to see which names),
-and a **Reset Memory** button next to it clears everything -- the
-equivalent of restarting a Jupyter kernel.
+```python
+a = cube([20, 20, 10], center=True)
+len(a)          # -> shows up in the console panel
+show(a)
+```
 
-This app runs your script with a plain Python `exec()` -- no sandboxing
+(`None` and shape values — the result of `cube()`/`show()`/`color()`/
+`union()`/etc — are quietly skipped so this doesn't spam the console with
+`show(x)` calls you already have in your scripts; it's meant for
+inspecting plain values.)
+
+**`union()`/`difference()`/`intersection()`/`hull()`/`show()`/`color()` also accept `swp()`/`swp_c()`/`swp_surf()`/`swp_triangles()` text directly**, not just a raw sol:
+
+```python
+a = cube([20, 20, 10], center=True)
+b = cylinder(r=6, h=20, center=True)
+show(difference(swp(a), swp(b)))
+```
+
+This matters because your library has four different ways to turn a shape into a polyhedron, each with different face connectivity for a reason (`swp()` caps both ends, `swp_c()` leaves them open for a closed loop, `swp_surf()` is an open triangulated surface, `swp_triangles()` is an explicit triangle list) — passing a plain sol into `union()`/`show()` always used `swp()`'s capped logic regardless of which the shape actually needed, which for anything that should've used `swp_c()`/`swp_surf()`/`swp_triangles()` instead could silently produce a non-manifold mesh (real OpenSCAD then rejects it during a boolean, even though the same mesh displays fine on its own). Passing the actual `swp*()` string tells the app exactly which connectivity you intended, and that exact text is handed to real OpenSCAD verbatim for any boolean op it's used in — no re-triangulation, no guessing. Plain sols still work as before (via `swp()`-equivalent auto-capping) for the common case where that's what you want.
+
+**`fo()` also renders in the viewer.** If you write scripts the way you
+already do in your notebook — `swp()` to turn a sol into `polyhedron()`
+text, `fo(f'''...''')` to write it out as a `.scad` file for real OpenSCAD,
+calling any of the helper modules real `fo()` always appends to the file
+(`p_line()`, `p_line3d()`, `p_line3dc()`, `points()`, `swp()`, `swp_c()`,
+`swp_surf()`, etc, as native OpenSCAD code) — that still works exactly as
+before (the file is still written, and those helpers are available), but
+`fo()`'s contents are *also* run through real OpenSCAD right now and the
+result is dropped straight into this app's viewer, so you don't need to
+add a separate `show()`/`union()` call in the app's own vocabulary just to
+see it here too. If a script calls both `fo()` and `show()`, both show up
+(as separate objects). If OpenSCAD isn't installed, `fo()` still writes
+the file but says so in the console instead of silently doing nothing.
+
+**Colors and `%`/`#` inside `fo()` text.** None of OpenSCAD's command-line
+export formats (STL included) actually preserve `color()` — that's a real
+OpenSCAD limitation, not something specific to this app. To work around
+it, `fo()`'s top-level statements are each rendered as their own separate
+OpenSCAD call — so `color("blue")`, `color("red", 0.3)` (alpha as a second
+argument, or `alpha=`, or a 4-element `[r,g,b,a]` array — all of OpenSCAD's
+own forms work), `%some_shape();` (rendered translucent, since real
+OpenSCAD's CLI export would otherwise drop `%`-marked geometry entirely —
+it's normally preview-only), and `#some_shape();` (rendered in a distinct
+highlight color to make it easy to spot) all come through into the viewer.
+`*` still disables/omits a statement entirely, same as real OpenSCAD. `%`/`#`
+are also picked up nested inside a shared block, not just at the top level
+— e.g. `difference(){ swp(a); #swp(b); }` still subtracts `b` normally
+(a `#` doesn't change the geometry, same as real OpenSCAD) *and* draws
+`b` again separately as a highlighted overlay so you can see what got
+cut away, the same idea as OpenSCAD's own debug-highlight preview.
+
+**Every `fo()` statement gets its own render call, even same-colored ones
+— this is what keeps open/non-manifold surfaces (`swp_surf()`, most
+commonly) from disappearing.** Real OpenSCAD's STL export always
+implicitly unions every top-level object in whatever file it's given —
+that's what F6/Render does (unlike F5/Preview, which just draws each
+object's raw geometry with no CGAL involved at all, so open surfaces show
+up fine there). That implicit union needs a valid CGAL Nef polyhedron,
+and silently drops any non-manifold operand caught up in it, even though
+the exact same object exports perfectly fine completely on its own. If
+two unrelated statements merely happened to land in the same file
+together (they used to, whenever they shared a color, purely to save a
+subprocess call), one could vanish from the viewer for a reason that had
+nothing to do with color — the same "there in Preview, gone in Render"
+symptom real OpenSCAD itself would show for the same geometry. Rendering
+every statement completely on its own avoids that: each one only goes
+through real CSG evaluation for whatever boolean ops it itself explicitly
+contains (a `difference(){...}` block, say — which legitimately still
+needs it, same as real OpenSCAD's own F6), never because it happened to
+share a file with something else.
+
+This mode runs your script with a plain Python `exec()` — no sandboxing
 beyond that, same trust level as running it in your own notebook.
 
-### Manually selecting edges for fillet()/chamfer()
+**Variables persist between runs, Jupyter-style.** Python mode keeps a
+kernel-like namespace alive across Render clicks: whatever your script
+assigns is still there the next time you press Render, even if you've
+since commented out the line that computed it. This is meant for the
+same workflow a notebook enables — compute something heavy once, then
+comment that line out and keep iterating on everything downstream of it
+without paying for the heavy part again:
 
-`shape.edges()` returns every edge of `shape` as a real build123d
-`ShapeList`, with the library's own selector API available directly --
-`.filter_by(Axis.Z)`, `.sort_by(Axis.Z)`, `.filter_by(GeomType.CIRCLE)`,
-plain indexing/slicing, etc (`from build123d import Axis` at the top of
-your script). `fillet(shape, edges, radius)`/`chamfer(shape, edges,
-length)` take that selection straight in. Since the viewer's own vertex
-picker only sees the *display tessellation*, not the real B-rep
-topology, there's no click-an-edge-in-3D tool -- use `show_edges(edges)`
-instead: it turns a selection into a visible "beaded string" of small
-spheres following each edge's curve, so you can `show()` it (in a
-different color/alpha) to confirm a selector picked the right edges
-*before* committing to a `fillet()`/`chamfer()` call. See
-`examples/04_fillets_and_chamfers.py`.
+```python
+# heavy_result = some_very_slow_function(...)   # computed once, now commented out
+show(translate([10, 0, 0], heavy_result))
+```
 
-## Examples
+The toolbar shows a **N vars in memory** indicator (hover it to see which
+names), and a **Reset Memory** button next to it clears everything —
+the Python-mode equivalent of restarting a Jupyter kernel. Use it
+whenever old variables from a previous script might be shadowing
+something in the one you're working on now; nothing does this
+automatically (switching scripts, opening a different example, etc. all
+leave existing memory alone), so it's a manual, explicit action. A
+script that errors partway through still keeps whatever it assigned
+before the error, same as a Jupyter cell would.
 
-`examples/` previously bundled a full set of built-in demo/reference
-scripts (one per capability, plus a batch of real-world ported parts).
-That whole bundled set has been cleared out so this is a clean slate
-for your own scripts. The two files still there
-(`38_mirror_surface_demo.py`, `41_openscad4_bridge_fillet.py`) are kept
-because you wrote their content yourself; everything else was deleted.
-Note that several docstrings/sections elsewhere in this README (and in
-brep.py's own function docstrings) still cross-reference the old
-`examples/NN_*.py` filenames by name -- those references are now
-stale/dangling, not links to files that still exist.
+Examples for both modes are in `examples/` (`*.scad` and `*.py`), and the
+Examples dropdown filters to whichever mode is currently selected.
+
+`05_python_points.py` through `71_python_fillet_3d_cube_and_cone.py` are a
+larger set of Python-mode examples covering the `fo(f'''...''')`/`swp()`-text
+workflow specifically -- points, lines, polylines, surfaces, solids, planes,
+extruding/sculpting along a path, rotation, translation, wrapping a section
+or surface around a path, 2D/3D intersections, offsetting (2D sections, 3D
+solids, surfaces, paths, and offsetting-while-staying-on-a-surface), b-spline/
+bezier/interpolation curves, convex and concave hulls (2D and 3D), projecting
+a line or surface onto another surface, and 2D/3D fillets (line-line,
+circle-circle, line-circle, sphere-sphere, and several solid/solid and
+solid/surface fillet strategies, including ones reconstructed via marching
+cubes). These were adapted from a walkthrough notebook one function/technique
+at a time -- each file is self-contained and safe to run on its own. A couple
+need things beyond what ships with SanPyCAD: `48_python_concave_hull_3d.py`
+needs `pip install alphashape` (says so in a comment at the top), and the
+`_marching_cubes`-suffixed fillet examples are computationally heavy and may
+take a while to render.
+
+## What's implemented (OpenSCAD-style mode)
+
+**Primitives** — `cube`, `sphere`, `cylinder`, `polyhedron`, and 2D
+`circle` / `square` / `polygon` (usable inside extrudes).
+
+**Transforms** — `translate`, `rotate` (both `rotate([x,y,z])` and
+`rotate(a, v=axis)`), `scale`, `mirror`, `color` (named colors or
+`[r,g,b]` / `[r,g,b,a]`), `resize`.
+
+**Boolean CSG** — `union`, `difference`, `intersection`, `hull`.
+
+**Extrusion** — `linear_extrude` (height, twist, center, `$fn`),
+`rotate_extrude` (angle, `$fn`).
+
+**Import** — `import("file.stl")` (also `.obj`, `.off`) loads an external
+mesh as a shape usable with `translate()`/`color()`/`union()`/etc, same
+as OpenSCAD's own `import()`. `import("file.svg")` loads a 2D shape
+instead (`<path>`/`<rect>`/`<circle>`/`<ellipse>`/`<polygon>`, with
+`<g transform=...>` applied; content inside `<defs>`/`<clipPath>`/
+`<mask>`/`<symbol>` or marked `display:none`/`visibility:hidden` is
+skipped, since that's never directly-rendered artwork -- e.g. the
+canvas-sized crop rect many icon SVGs put in a `<clipPath>`), usable the
+same way `circle()`/`square()`/`polygon()` are -- only inside
+`linear_extrude()`/`rotate_extrude()`. If the SVG has more than one
+separate closed shape (a flower icon's individual petals, say), every one
+of them gets extruded and the results are automatically unioned into a
+single solid, rather than only the largest shape being used. See
+`backend/mesh_import.py`.
+
+**Language** — variables, arithmetic/comparison/boolean expressions,
+vectors, ranges (`[a:b]`, `[a:step:b]`), `for`, `if`/`else`, `let`,
+`module` definitions (with `children()`), `function` definitions,
+`echo()`, `$fn`/`$fa`-style special variables, comments, and the
+`# % ! *` modifier characters in front of a shape (highlight / background
+/ show-only / disable — `!` currently just renders normally rather than
+hiding the rest of the scene).
+
+**Every primitive and extrusion is generated by calling straight into your
+`ocad.py`** (`cube`, `sphere`, `cylinder`, `circle`, `square`,
+`linear_extrude`, `translate`, and `triangulate_solid_open` — which itself
+uses your `earclip_3d` for capping — are all called directly). Only
+`rotate_extrude` has no equivalent in the library, so that one revolve
+routine is written directly with numpy.
+
+## How CSG booleans work
+
+This app checks for a real OpenSCAD install at startup (look for the
+**"Exact CSG (OpenSCAD)" / "Approximate CSG (voxel)"** badge in the
+toolbar, or the message printed to the terminal when `app.py` starts) and
+uses it automatically when present:
+
+**With OpenSCAD installed (exact)** — this is your existing swp()/fo()
+workflow, automated: each operand mesh is written out as its own
+`polyhedron(points=..., faces=..., convexity=10)` (in Python mode, using
+the *exact* text `swp()`/`swp_c()`/`swp_surf()`/`swp_triangles()` returned
+if you passed that in directly, rather than re-deriving it), wrapped in
+`union(){}` / `difference(){}` / `intersection(){}` / `hull(){}`, and
+rendered headless with `openscad --backend=Manifold -o out.stl in.scad` --
+Manifold is OpenSCAD's newer boolean engine, explicitly selected rather
+than left to whatever backend your local OpenSCAD preferences happen to
+have set, since it's both faster and considerably more robust than the
+older CGAL engine (which has known internal-assertion crashes on
+otherwise-valid geometry, e.g. two operands that touch along an exactly
+coincident seam). If your OpenSCAD build predates the `--backend` flag,
+this app retries once without it automatically. The STL result is read
+back in as the final mesh. Sharp, exact, no voxel artifacts — this is
+what you get by default once OpenSCAD is on your machine; nothing else to
+configure. It's looked for on `PATH` and in the usual per-OS install
+locations (e.g. `/Applications/OpenSCAD.app/...` on macOS; on Windows,
+both `Program Files`/`Program Files (x86)` -- the "install for all
+users" default -- and `%LocalAppData%\Programs` -- the "install for me
+only" option some installers offer instead, which doesn't need admin
+rights -- are checked, including an `OpenSCAD (Nightly)` folder name for
+nightly builds).
+
+**If it's installed but still shows as "Approximate CSG (voxel)"**
+(most often on Windows, if it was installed to a custom folder, or as a
+portable/zip build extracted somewhere of your own choosing): hover the
+badge -- its tooltip lists every location that was actually checked. Set
+the `SANPYCAD_OPENSCAD_PATH` environment variable to the exact full path
+of `openscad.exe` (or the `OpenSCAD`/`openscad` binary on other
+platforms) and restart SanPyCAD; that path is always checked first,
+ahead of every built-in guess. On Windows, setting it for your account
+(**System Properties > Environment Variables > New...** under "User
+variables", or `setx SANPYCAD_OPENSCAD_PATH "C:\path\to\openscad.exe"` in
+a Command Prompt, then restart SanPyCAD) is the simplest way to do this.
+
+**Without OpenSCAD (fallback)** — a **voxel sample + marching-cubes**
+approximation, so the app still works fully standalone if you don't have
+OpenSCAD:
+
+1. sample a 3D grid over the operands' bounding box
+2. classify each grid point inside/outside each mesh with a vectorized
+   ray-parity test — the same technique your `points_inside_solid()` uses,
+   generalized here to work on any triangle mesh
+3. combine the inside/outside grids per the operator
+4. run `skimage.measure.marching_cubes` (already a dependency of your
+   library) to extract the resulting surface, then a Taubin smoothing pass
+   to soften the voxel "staircase" look
+
+This fallback is **not perfectly sharp** and thin features can disappear
+at low detail — if you ever see it in use, the **CSG detail** slider in
+the toolbar (`csg_resolution`, up to 120) raises quality at the cost of
+render time. If OpenSCAD is installed but a particular call to it fails
+for some reason, the app falls back to this automatically too and says so
+in the console panel (with the reason), rather than failing the whole
+render.
+
+Plain (non-boolean) shapes like a bare `cube()` or `cylinder()` never go
+through either CSG pipeline — they come straight from `ocad.py` and
+are always exact regardless of whether OpenSCAD is installed.
 
 ## Known limitations
 
-- `linear_extrude(twist=..., scale=...)` (a helical/tapered extrude) is
-  not implemented -- build123d's own `extrude()` has no direct
-  equivalent; that shape needs a loft between rotated/scaled copies of
-  the profile, or a genuine helical sweep. Calling it with a non-default
-  `twist`/`scale` raises a clear error rather than silently extruding
-  straight.
-- `hull()` is exact for shapes made only of flat faces (boxes, unions of
-  boxes, etc), but only an approximation (accurate to the default
-  tessellation tolerance) for anything with curved faces (`cylinder()`,
-  `sphere()`, a `fillet()`ed edge) -- see its own docstring.
-- `sweep_sec2path()` calls build123d's own native `sweep()` directly,
-  with `transition="round"` by default -- OCCT joins corners with a
-  rounded fillet-like surface, which is what makes a sharp-cornered
-  `path3d` produce valid geometry (build123d's own default,
-  `transition="transformed"`, is a flat mitered joint that's prone to
-  self-intersecting on a genuinely sharp corner). Try
-  `transition="right_corner"` or `"transformed"` if `"round"` doesn't
-  look right for a given path. `path3d` can also be a filled 2D shape
-  (`circle()`/`square()`/`polygon()`) -- its boundary is used
-  automatically (`sweep_sec2path(circle(2), circle(15))` is a torus) --
-  but only reliably for a shape with a single boundary; anything with
-  holes/multiple boundaries needs its own explicit Wire/Edge instead.
-  `mirror=`/`orientation=` are "try it, look at the result, adjust"
-  knobs, not something computed automatically -- see the function's own
-  docstring for why (and for the two earlier, now-abandoned fix
-  attempts -- a hand-rolled segment-extrude-and-union approach -- that a
-  real user's bug reports against a real build123d install walked this
-  function through before landing here).
-- No STEP/BREP export button in the toolbar yet -- call
-  `export_step()`/`export_brep()` directly in your script for now (see
-  `examples/05_export.py`). The Export dropdown's STL/OBJ/DXF are all
-  tessellated exports; SVG is the one exception -- a real hidden-line-
-  removed engineering drawing computed straight from the B-rep shape,
-  not a tessellation (see above).
-- No mesh/STL import -- there's no B-rep equivalent of "reconstruct
-  exact analytic surfaces from an arbitrary triangle mesh," so this
-  isn't a gap that can be closed the same way the mesh SanPyCAD apps'
-  `import()` works.
+- **2D booleans aren't supported.** `linear_extrude`/`rotate_extrude` take
+  a single 2D outline (`circle`/`square`/`polygon`, optionally wrapped in
+  `translate`/`rotate`/`scale`) — you can't `difference()` two 2D shapes
+  before extruding. The robust workaround (and honestly the usual OpenSCAD
+  pattern anyway) is to extrude a solid block and then subtract a 3D shape
+  from it — see `examples/02_boolean_csg.scad`.
+- Non-convex `polygon()` end caps use ear-clipping via your `earclip_3d`,
+  which should handle most simple polygons, but self-intersecting outlines
+  aren't validated.
+- Module/function scoping is simplified: a module body sees its own
+  parameters plus top-level (global) variables, not full OpenSCAD-style
+  dynamic scoping of caller locals. `children()` is supported for the
+  common "wrapper module" pattern.
+- `!` (show-only) parses but doesn't hide the rest of the scene yet.
+- `import()` supports STL/OBJ/OFF (3D) and SVG (2D, single largest closed
+  shape only -- no multi-part shapes with holes, no 3MF/AMF/DXF import). No
+  `text()`, `surface()`, `minkowski()`, `render()`.
 
 ## Project layout
 
 ```
-SanPyCAD Brep.app/         <- double-click this to launch (macOS)
+SanPyCAD.app/            <- double-click this to launch (macOS)
 Fix Mac Security Warning.command  <- run once after unzipping, before first launch (macOS)
-SanPyCAD Brep.vbs          <- double-click this to launch (Windows)
-run_sanpycad_brep.bat      <- backup Windows launcher (visible console; use if .vbs is blocked)
-app.py                     <- what the launchers above run; also runnable directly
+SanPyCAD.vbs              <- double-click this to launch (Windows)
+run_sanpycad.bat          <- backup Windows launcher (visible console; use if .vbs is blocked)
+app.py                    <- what the launchers above run; also runnable directly
 backend/
-  brep.py                  <- the B-rep layer: primitives/transforms/booleans/fillets/export, on build123d
-  mesh_types.py             <- the display-only Mesh container (tessellation + color, for the viewer)
-  python_eval.py            <- runs scripts (exec + show/color/echo helpers), see its module docstring
-  vendor_assets.py          <- downloads CodeMirror/Three.js into frontend/vendor/ once, for offline use
-  server.py                 <- stdlib HTTP server (routes: /, /status, /render, /export/stl, /examples)
+  ocad.py            <- your library, unmodified
+  scad_lang.py            <- tokenizer + parser for the OpenSCAD-style language
+  scad_eval.py            <- walks the parsed script, calls ocad.py, applies transforms
+  python_eval.py          <- runs Python-mode scripts (exec + union/difference/.../show helpers)
+  geom_bridge.py          <- shared "sol -> watertight mesh" conversion, used by both modes
+  csg.py                  <- boolean CSG + hull: tries openscad_cli.py first, voxel fallback
+  openscad_cli.py         <- shells out to the real OpenSCAD app for exact CSG, if installed
+  mesh_import.py          <- STL/OBJ/OFF readers for import()/import_mesh()
+  vendor_assets.py        <- downloads CodeMirror/Three.js into frontend/vendor/ once, for offline use
+  server.py               <- stdlib HTTP server (routes: /, /status, /render, /export/stl, /examples)
 frontend/
-  index.html                <- code editor (CodeMirror) + 3D viewer (Three.js), single file
-  vendor/                   <- local copies of CodeMirror/Three.js (downloaded on first run; see above)
+  index.html              <- code editor (CodeMirror) + 3D viewer (Three.js), single file
+  vendor/                  <- local copies of CodeMirror/Three.js (downloaded on first run; see above)
 examples/
-  *.py                      <- one focused example per capability, see above
+  *.scad                  <- OpenSCAD-style examples
+  *.py                    <- Python-mode examples
+imports/                  <- drop STL/OBJ/OFF files here to import() by filename
+                             (created automatically the first time it's needed)
 ```
 
 If you'd rather run it as a plain local web page (e.g. to open it in a
