@@ -77,12 +77,25 @@ hiddenimports += [
 # import statement to auto-detect it -- without being told by hand like
 # this, it silently never gets bundled at all, so every frozen build
 # reports "manifold3d not installed" and only ever uses the rougher
-# fallback, even though requirements.txt does install it into the build
-# venv. Guarded by try/except here too, purely so a local dev build
-# still works if manifold3d isn't installed in *this* environment.
+# fallback, even though it is genuinely installed in the build venv.
+#
+# "manifold3d" itself is added unconditionally, NOT inside a try/except:
+# an earlier version of this wrapped the whole
+# `hiddenimports += ["manifold3d"] + collect_submodules(...)` expression
+# in one try/except, which meant that if collect_submodules() raised for
+# any reason, the += never ran at all (Python evaluates the right-hand
+# side first) and "manifold3d" silently never made it into hiddenimports
+# either -- exactly the kind of bug that looks like it should work but
+# doesn't. collect_submodules/collect_dynamic_libs are supplementary (for
+# any private submodules or bundled shared libraries respectively) so
+# those two stay individually guarded, each only protecting itself.
+hiddenimports += ["manifold3d"]
 manifold_binaries = []
 try:
-    hiddenimports += ["manifold3d"] + collect_submodules("manifold3d")
+    hiddenimports += collect_submodules("manifold3d")
+except Exception:
+    pass
+try:
     manifold_binaries += collect_dynamic_libs("manifold3d")
 except Exception:
     pass
