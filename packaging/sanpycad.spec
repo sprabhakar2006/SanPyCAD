@@ -143,11 +143,18 @@ try:
                 for _fname in os.listdir(_libs_dir):
                     manifold_binaries.append((os.path.join(_libs_dir, _fname), _entry))
     # Printed during the build (visible in CI logs) so a future failure
-    # shows up as a log line instead of another silent no-op.
-    print(f"[sanpycad.spec] manifold3d module file: {_m3d_file}")
-    print(f"[sanpycad.spec] manifold3d .libs folders found: {_found_libs_dirs or 'NONE'}")
+    # shows up as a log line instead of another silent no-op. flush=True
+    # because this is plain print() interleaved with PyInstaller's own
+    # logging -- under CI, stdout is piped (not a terminal), so Python
+    # block-buffers print() by default and these lines can otherwise
+    # land anywhere in the log (even after the step appears to finish)
+    # relative to the logger's own immediately-flushed INFO/WARNING
+    # lines, making them effectively invisible without searching the
+    # entire raw log.
+    print(f"[sanpycad.spec] manifold3d module file: {_m3d_file}", flush=True)
+    print(f"[sanpycad.spec] manifold3d .libs folders found: {_found_libs_dirs or 'NONE'}", flush=True)
 except Exception as _m3d_scan_exc:
-    print(f"[sanpycad.spec] manifold3d .libs scan failed: {_m3d_scan_exc!r}")
+    print(f"[sanpycad.spec] manifold3d .libs scan failed: {_m3d_scan_exc!r}", flush=True)
 
 datas = collect_data_files("sympy")
 

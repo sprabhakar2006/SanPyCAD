@@ -568,7 +568,7 @@
           <button id="mode-python" class="mode-btn active" title="Plain Python calling ocad.py directly">Python</button>
         </div>
         <div class="settings-section">
-          <div class="settings-label">OpenSCAD path</div>
+          <div class="settings-label" title="Boolean CSG (union/difference/intersection/hull) no longer uses OpenSCAD -- it runs on the bundled manifold3d library instead. This path is only for fo()/raw .scad text rendering, which still goes through a real OpenSCAD install if you have one.">OpenSCAD path (optional -- for fo() rendering only)</div>
           <div id="openscad-path-row">
             <input id="openscad-path-input" type="text" placeholder="Auto-detected -- leave blank unless it's not found">
             <button id="btn-openscad-browse" title="Pick the OpenSCAD app/executable">&#128193;</button>
@@ -609,6 +609,7 @@
         </button>
       </div>
     </div>
+    <button id="btn-send-to-brep" title="Export the current shape(s) as a real B-rep STEP file and open them in SanPyCAD Brep to keep editing (fillet, chamfer, boolean, exact STEP export, etc.)">&#8680; Send to SanPyCAD Brep</button>
     <button id="btn-import" title="Import an external STL/OBJ/OFF mesh or SVG shape file, like OpenSCAD's import()">&#8682; Import</button>
     <input id="import-file-input" type="file" accept=".stl,.obj,.off,.svg" style="display:none">
     <button id="btn-save" title="Save the current script (Ctrl/Cmd+S) -- .py in Python mode, .scad in OpenSCAD-style mode">&#128190; Save</button>
@@ -621,7 +622,7 @@
       <input id="csg-res" type="range" min="24" max="120" value="56" step="4">
       <span id="csg-res-val">56</span>
     </label>
-    <span id="csg-backend-badge" class="badge" title="Checking for OpenSCAD...">&#8943;</span>
+    <span id="csg-backend-badge" class="badge" title="Checking for manifold3d...">&#8943;</span>
     <label title="Toggle between perspective and orthographic (no vanishing-point distortion) camera projection">
       <input id="ortho-toggle" type="checkbox"> Orthographic
     </label>
@@ -1218,6 +1219,9 @@ function renderVarsPanel() {
   for (const name of [...shownVarNames]) {
     if (!orderedNames.includes(name)) shownVarNames.delete(name);
   }
+  for (const name of [...brepSendKind.keys()]) {
+    if (!orderedNames.includes(name)) brepSendKind.delete(name);
+  }
   const listEl = document.getElementById('vars-list');
   listEl.innerHTML = '';
   if (!orderedNames.length) {
@@ -1300,6 +1304,40 @@ function renderVarsPanel() {
     // Reference-panel-style toolbar, this is the Variables panel's
     // equivalent (per-item visibility, not the "highlight just this
     // one" behavior the row's own click handler used to have).
+    // "Send to Brep as..." -- explicit per-variable opt-in for "Send to
+    // SanPyCAD Brep" (see btnSendToBrep below), instead of that button
+    // always sweeping up every raw-sol variable in memory and guessing
+    // solid-vs-surface from geometry alone. Left at "Don't send" by
+    // default; picking anything else here means only explicitly-picked
+    // variables get sent, each exported using the chosen kind rather
+    // than an auto-detected one -- the fix for a real, un-closed surface
+    // (built with swp_surf()) otherwise round-tripping as a solid, which
+    // geometry-based guessing can't reliably rule out.
+    const brepSel = document.createElement('select');
+    brepSel.title = `Choose what "${name}" should become in SanPyCAD Brep, then use `
+      + `"Send to SanPyCAD Brep" -- once anything here is set (on any variable), only `
+      + `explicitly-chosen variables are sent, each exported as its own chosen kind.`;
+    brepSel.style.fontSize = '11px';
+    brepSel.style.maxWidth = '92px';
+    [
+      ['', "Don't send"],
+      ['auto', '→ Brep (auto)'],
+      ['solid', '→ Brep: solid'],
+      ['closed', '→ Brep: closed loop'],
+      ['surface', '→ Brep: surface'],
+    ].forEach(([val, label]) => {
+      const opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = label;
+      brepSel.appendChild(opt);
+    });
+    brepSel.value = brepSendKind.get(name) || '';
+    brepSel.addEventListener('click', (e) => e.stopPropagation());
+    brepSel.addEventListener('change', () => {
+      if (brepSel.value) brepSendKind.set(name, brepSel.value);
+      else brepSendKind.delete(name);
+    });
+    actions.appendChild(brepSel);
     const visBtn = document.createElement('button');
     visBtn.textContent = isShown ? '\u{1F441}️' : '\u{1F6AB}'; // 👁️ : 🚫
     visBtn.title = isShown
@@ -3175,7 +3213,20 @@ function showMeshes(meshes) {
       side: THREE.DoubleSide,
       roughness: 0.6,
       metalness: 0.05,
-      flatShading: false,
+      // Flat (per-face), not smooth (per-vertex-interpolated), shading --
+      // matches OpenSCAD's own preview, which has always rendered this
+      // way (every triangle a single uniform-lit facet, no Gouraud/Phong
+      // blending across it). This also happens to be what actually keeps
+      // a large flat face reading as one uniform color from every camera
+      // angle: smooth shading blends each triangle's corner normals
+      // across it, so a big face built from several large triangles
+      // (this app's own CSG output, especially from manifold3d, often
+      // has far fewer/larger triangles per flat region than a typical
+      // subdivided mesh) can show a visible gradient across itself even
+      // when every triangle's own normal is identical and the face is
+      // genuinely, exactly flat -- flat shading has no such blending to
+      // produce that gradient in the first place.
+      flatShading: true,
     });
     const mesh = new THREE.Mesh(geo, mat);
     // Python-mode only: sol1[i][j]-style labels for this mesh's
@@ -8977,6 +9028,13 @@ function buildGuiFnResultGroup(points, color, name) {
 // one list-of-lists, because the backend built them that way on
 // purpose).
 let varPreviews = new Map(); // name -> { data: {curves,points}|null, lineGroup, pointsObj, lineOn, pointsOn }
+// Variables panel's "Send to Brep as..." per-row choice -- name -> ""
+// (don't send) | "auto" | "solid" | "closed" | "surface". Empty/absent
+// means "not explicitly selected"; btnSendToBrep only builds a
+// `selection` payload from entries with a non-empty value, and falls
+// back to the old "send every raw-sol variable, auto-detected" behavior
+// when nothing has been explicitly checked -- see its own click handler.
+let brepSendKind = new Map();
 const varPreviewGroup = new THREE.Group();
 scene.add(varPreviewGroup);
 // Distinct from guiFnTubeRadius's own color (magenta-ish default) purely
@@ -10453,6 +10511,70 @@ exportMenuPanel.querySelectorAll('button[data-kind]').forEach((b) => {
 });
 
 // ---------------------------------------------------------------------
+// "Send to SanPyCAD Brep" -- one click, no dialogs (after the very
+// first use, which has to ask where SanPyCAD Brep is installed):
+// exports the current shape(s) as a real B-rep STEP file and launches
+// a brand-new SanPyCAD Brep process that auto-imports it, so it can be
+// kept editing there as exact geometry (fillet/chamfer/booleans/exact
+// STEP export -- none of which this mesh-based app can do). Desktop-
+// app only (window.pywebview.api) -- there's no meaningful browser-tab
+// fallback for "launch a different desktop app".
+// ---------------------------------------------------------------------
+const btnSendToBrep = document.getElementById('btn-send-to-brep');
+btnSendToBrep.addEventListener('click', async () => {
+  if (!(window.pywebview && window.pywebview.api && window.pywebview.api.send_to_brep)) {
+    logLine('Send to SanPyCAD Brep needs the desktop app window (not available in a plain browser tab).', 'err');
+    return;
+  }
+  btnSendToBrep.disabled = true;
+  try {
+    const code = cm.getValue();
+    // Only variables the Variables panel's "Send to Brep as..." dropdown
+    // has explicitly been set on (anything other than "Don't send") go
+    // in here -- an empty object (nothing ever touched) tells the backend
+    // to fall back to its old default of sending every raw-sol variable,
+    // auto-detected, same as before this feature existed.
+    const selection = {};
+    for (const [vname, kind] of brepSendKind.entries()) {
+      if (kind) selection[vname] = kind;
+    }
+    const hasSelection = Object.keys(selection).length > 0;
+    let result = await window.pywebview.api.send_to_brep(
+      code, mode, parseInt(csgRes.value, 10), null, hasSelection ? selection : null);
+    if (result && result.needs_path) {
+      logLine('Locate your SanPyCAD Brep install (its .app on macOS, its .vbs/.bat on Windows) to send shapes to it -- only needed once.', 'info');
+      const picked = await window.pywebview.api.pick_brep_app_path();
+      if (!picked || picked.canceled) {
+        logLine('Send to SanPyCAD Brep canceled.', 'info');
+        return;
+      }
+      if (picked.error) {
+        logLine('Could not use that location: ' + picked.error, 'err');
+        return;
+      }
+      result = await window.pywebview.api.send_to_brep(
+        code, mode, parseInt(csgRes.value, 10), picked.path, hasSelection ? selection : null);
+    }
+    if (result && result.error) {
+      logLine('Send to SanPyCAD Brep failed: ' + result.error, 'err');
+    } else if (result && result.ok) {
+      const n = result.n_bodies || 1;
+      const what = result.sent_pieces
+        ? `${n} individual ${n === 1 ? 'shape' : 'shapes'} (pre-boolean, still exact)`
+        : `${n} ${n === 1 ? 'body' : 'bodies'} (the shown/rendered result -- no separate un-booleaned pieces were found to send instead)`;
+      const dest = result.reused_existing
+        ? 'your already-open SanPyCAD Brep window'
+        : 'SanPyCAD Brep -- opening it now';
+      logLine(`Sent ${what} to ${dest}.`, 'info');
+    }
+  } catch (e) {
+    logLine('Send to SanPyCAD Brep failed: ' + e, 'err');
+  } finally {
+    btnSendToBrep.disabled = false;
+  }
+});
+
+// ---------------------------------------------------------------------
 // Import (STL/OBJ/OFF) -- like OpenSCAD's import(), inserted as code at
 // the cursor rather than added straight to the scene, so it becomes a
 // normal part of the script (can be translate()d, union()d, etc).
@@ -10740,15 +10862,26 @@ examplesSelect.addEventListener('change', async () => {
   const resp = await fetch('/examples/' + examplesSelect.value);
   const data = await resp.json();
   if (data.code !== undefined) {
-    cm.setValue(data.code);
-    savedScripts[mode] = data.code;
-    renderScene();
+    // Same restore path Open uses (see app.py's open_script() / this
+    // file's own loadScriptInto()) -- an example that references a "2D
+    // Sketch"-drawn or GUI-Function-derived variable in its own code
+    // (never assigned there, only ever injected into the kernel) needs
+    // its sketch_data/guifn_data sidecar (now served alongside the code
+    // by the /examples/<name> route) re-injected the same way Open's
+    // sidecar restoration does, or it NameErrors on the very next
+    // Render. `path` is intentionally left null here (not a real
+    // openable file path -- see loadScriptInto()'s own comment on why
+    // that's fine): examplesSelect's own value already has the right
+    // extension and populateExamples() only ever lists examples
+    // matching the CURRENT mode anyway, so loadedMode falls back to
+    // `mode` unchanged either way.
+    await loadScriptInto(data.code, null, data.sketch_data, data.guifn_data);
   }
 });
 loadExamplesList();
 
 // ---------------------------------------------------------------------
-// Backend status (is real OpenSCAD available for exact CSG?)
+// Backend status (is manifold3d available for exact CSG?)
 // ---------------------------------------------------------------------
 let openscadPathPrefilled = false;
 async function loadBackendStatus() {
@@ -10762,20 +10895,20 @@ async function loadBackendStatus() {
       openscadPathInput.value = data.openscad_configured_path || '';
       openscadPathPrefilled = true;
     }
-    if (data.openscad) {
-      badge.textContent = 'Exact CSG (OpenSCAD)';
+    if (data.manifold3d) {
+      badge.textContent = 'Exact CSG (Manifold)';
       badge.className = 'badge exact';
-      badge.title = 'Using ' + data.openscad_path + ' for exact boolean CSG';
+      badge.title = 'Using manifold3d for exact boolean CSG (union/difference/intersection/hull)';
     } else {
       badge.textContent = 'Approximate CSG (voxel)';
       badge.className = 'badge approx';
-      let title = 'OpenSCAD not found -- install it, or set its path in Settings, for exact, sharp CSG results.';
-      if (data.openscad_search && data.openscad_search.length) {
-        title += '\n\nChecked:\n' + data.openscad_search.map((s) => '  ' + s.path).join('\n');
-        title += '\n\nIf it\'s installed somewhere else, open Settings (the gear icon) and set ' +
-          'the "OpenSCAD path" field -- no restart needed.';
-      }
-      badge.title = title;
+      badge.title = 'manifold3d not installed -- using the approximate voxel method for ' +
+        'CSG booleans. Run "pip install manifold3d" and restart for exact, sharp results.' +
+        // The actual Python exception, when the backend has one (e.g. a
+        // frozen Windows build where the module is bundled but one of
+        // its own DLL dependencies didn't load) -- hover the badge to
+        // read it instead of needing a console or CI logs.
+        (data.manifold3d_error ? ('\n\nReason: ' + data.manifold3d_error) : '');
     }
   } catch (e) {
     badge.textContent = '';
