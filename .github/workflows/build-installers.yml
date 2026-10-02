@@ -25,9 +25,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macos-14 is Apple Silicon. Intel (macos-13) was dropped to
-          # reduce concurrent macOS runner demand on the free-tier
-          # account (capped at 5 concurrent macOS jobs total).
+          # macos-14 is Apple Silicon. An Intel build (macos-13) was
+          # dropped from this matrix -- GitHub's free-tier account caps
+          # concurrent macOS runners at 5 across the whole account, and
+          # with three repos (SanPyCAD, SanPyCAD-Brep, SanPyCAD-2D) each
+          # queuing two macOS jobs per release, builds were stalling in
+          # the queue. Re-add a macos-13 entry here (mirroring the
+          # arm64 one, with asset SanPyCAD-mac-intel.zip) if Intel Mac
+          # support is needed later.
           - os: macos-14
             label: macOS (Apple Silicon)
             asset: SanPyCAD-mac-arm64.zip
@@ -45,7 +50,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy scipy sympy scikit-image pywebview pyperclip pyinstaller
+          python -m pip install numpy scipy sympy scikit-image manifold3d pywebview pyperclip pyinstaller
 
       - name: Build bundle
         env:
