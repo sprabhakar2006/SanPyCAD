@@ -24,7 +24,7 @@ import os
 import sys
 
 from PyInstaller.building.datastruct import Tree
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files, collect_dynamic_libs
 
 PROJECT_ROOT = os.path.abspath(os.path.join(SPECPATH, os.pardir))
 IS_WINDOWS = sys.platform == "win32"
@@ -69,16 +69,34 @@ hiddenimports += [
     "webbrowser", "xml.etree.ElementTree",
 ]
 
+# csg.py's `import manifold3d` is a soft dependency -- it's a compiled
+# C++ extension package (the exact boolean/hull engine), caught in a
+# try/except ImportError there so the app still runs via the voxel
+# fallback if it's missing. But because csg.py is itself one of the
+# encrypted/disk-loaded modules above, PyInstaller can never see that
+# import statement to auto-detect it -- without being told by hand like
+# this, it silently never gets bundled at all, so every frozen build
+# reports "manifold3d not installed" and only ever uses the rougher
+# fallback, even though requirements.txt does install it into the build
+# venv. Guarded by try/except here too, purely so a local dev build
+# still works if manifold3d isn't installed in *this* environment.
+manifold_binaries = []
+try:
+    hiddenimports += ["manifold3d"] + collect_submodules("manifold3d")
+    manifold_binaries += collect_dynamic_libs("manifold3d")
+except Exception:
+    pass
+
 datas = collect_data_files("sympy")
 
 a = Analysis(
     [os.path.join(PROJECT_ROOT, "app.py")],
     pathex=[PROJECT_ROOT, os.path.join(PROJECT_ROOT, "packaging")],
-    binaries=[],
+    binaries=manifold_binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
-    runtime_hooks=[os.path.join(PROJECT_ROOT, "packaging", "runtime_hook_scipy.py")],
+    runtime_hooks=[],
     # open3d is imported lazily inside three ocad.py helpers and is an
     # optional extra; bundling it would add hundreds of MB for features
     # almost nobody calls. matplotlib/tkinter/IPython are pulled in as
