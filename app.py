@@ -21,13 +21,41 @@ To get the native window (recommended), install pywebview first:
 """
 
 import base64
+import json
 import os
 import sys
 import socket
+import tempfile
 import threading
 import time
 import traceback
 import webbrowser
+
+
+def _unblock_bundled_dlls():
+    """Windows stamps every file extracted from a downloaded zip with a
+    "this came from the internet" mark (an NTFS Zone.Identifier
+    alternate data stream). .NET Framework refuses to load an assembly
+    carrying that mark, which is what makes pywebview's winforms backend
+    (it loads bundled DLLs via pythonnet/.NET) fail with a cryptic
+    "Failed to resolve Python.Runtime.Loader.Initialize" RuntimeError on
+    a plain unzip-and-run -- nothing to do with this app's own code.
+    Removing the mark from every bundled DLL before webview is ever
+    imported avoids that entirely. No-op on macOS/Linux or when running
+    from source (only frozen Windows builds carry bundled DLLs)."""
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return
+    base = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    for root, _dirs, files in os.walk(base):
+        for name in files:
+            if name.lower().endswith(".dll"):
+                try:
+                    os.remove(os.path.join(root, name) + ":Zone.Identifier")
+                except OSError:
+                    pass  # no mark present, or the folder isn't writable
+
+
+_unblock_bundled_dlls()
 
 # Where backend/, frontend/ and examples/ live. Running from source
 # that is simply this file's own folder. In a frozen (PyInstaller)
@@ -42,6 +70,7 @@ else:
 sys.path.insert(0, os.path.join(BASE_DIR, "backend"))
 
 import server  # noqa: E402
+import brep_bridge  # noqa: E402
 
 try:
     import bundle_paths  # noqa: E402  (frozen builds only)
@@ -67,6 +96,179 @@ def wait_for_server(url, timeout=5.0):
         except Exception:
             time.sleep(0.05)
     return False
+
+
+import re as _re  # noqa: E402
+
+_TOP_LEVEL_SHOW_RE = _re.compile(r"^show\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:,.*)?\)\s*$")
+
+
+def _build_brep_script(code, wanted_names):
+    """Turns a SanPyCAD script into the exact script Brep should run for
+    "Send to SanPyCAD Brep", instead of exporting/importing a STEP file.
+
+    SanPyCAD's own geometry library (ocad.py) is already flattened into
+    Brep's script namespace, and Brep overrides swp()/swp_c()/swp_surf()
+    to build REAL B-rep shapes directly from the same section-grid data
+    (see brep.py's python_eval.py "auto-promotion" wrappers) instead of
+    ocad.py's own OpenSCAD-text output -- so re-running this exact script
+    over there reproduces the shape natively and instantly, with none of
+    the STEP round-trip's file-size/speed cost or the smooth-fit-vs-
+    faceted mismatch that caused surfaces to come back dimpled. This is
+    what the user asked for directly: "convert the sanpycad script to
+    relevant sanpycad-brep script and then show will produce correct
+    results."
+
+    `wanted_names`, if given (from the Variables panel's "Send to Brep
+    as..." selection), comments out every top-level show(<name>) call
+    for a name NOT in that set (so only the checked variables render in
+    Brep) and appends a show(<name>) for any wanted name the script
+    didn't already show on its own. Left completely untouched, including
+    every one of the script's own show() calls, when no selection was
+    made -- matching "send everything currently shown" default.
+
+    Only rewrites lines that are ENTIRELY a top-level `show(name)` call
+    (no leading indentation, nothing else on the line) -- deliberately
+    conservative, since every SanPyCAD script this app has ever
+    generated or the user has written by hand in practice is flat, top-
+    level code with no show() calls nested inside a function/loop body;
+    leaving anything indented alone means this can never mangle a script
+    structured differently than expected."""
+    if not wanted_names:
+        return code
+    wanted = set(wanted_names)
+    shown_already = set()
+    out_lines = []
+    for line in code.splitlines():
+        m = _TOP_LEVEL_SHOW_RE.match(line)
+        if m:
+            nm = m.group(1)
+            if nm in wanted:
+                out_lines.append(line)
+                shown_already.add(nm)
+            else:
+                out_lines.append(f"# {line}  # (not selected for Brep)")
+        else:
+            out_lines.append(line)
+    for nm in wanted_names:
+        if nm not in shown_already:
+            out_lines.append(f"show({nm})")
+    return "\n".join(out_lines)
+
+
+import ast as _ast  # noqa: E402
+
+
+def _free_names_in_script(code):
+    """Names the script READS (Load context) that it never itself
+    ASSIGNS (Store context) anywhere in its own text -- a plain,
+    deliberately approximate "free variable" scan via the ast module
+    (not real scope analysis: a name assigned only inside a nested
+    function/comprehension still counts as "assigned" here, same as
+    every other SanPyCAD script-text tool in this file, which all
+    assume flat, top-level procedural code -- see _build_brep_script()'s
+    own docstring for why that's a safe assumption in practice).
+
+    Used by send_to_brep() to find variables like a "2D Sketch"-
+    injected `sec`/`path`/`rect` that the CURRENT script's own text
+    never defines at all -- those live only in this app's own
+    persistent kernel namespace (python_eval.py's set_persisted_
+    variable(), called by the 2D Sketch panel/GUI Functions), invisible
+    to a script-mode send that only ever looks at the script's text."""
+    try:
+        tree = _ast.parse(code)
+    except SyntaxError:
+        return set()
+    loaded, stored = set(), set()
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Name):
+            if isinstance(node.ctx, _ast.Load):
+                loaded.add(node.id)
+            elif isinstance(node.ctx, (_ast.Store, _ast.Del)):
+                stored.add(node.id)
+        elif isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+            stored.add(node.name)
+        elif isinstance(node, _ast.ClassDef):
+            stored.add(node.name)
+    return loaded - stored
+
+
+_LITERAL_MAX_DEPTH = 25
+
+
+def _to_plain_literal(value, _depth=0):
+    """Recursively converts `value` to plain built-in types (None, bool,
+    int, float, str, list, dict) that repr() round-trips as valid Python
+    source -- e.g. a numpy array/scalar (common in this app's own
+    ocad.py-computed values) via its own .tolist()/.item(), so the
+    result can be written as a literal `name = <this>` line straight
+    into a script. Raises TypeError/ValueError for anything that isn't
+    plain data (a Mesh, a function, a custom class instance, ...) --
+    callers should catch that and simply skip the variable rather than
+    emit broken/misleading code, same as e.g. an un-injectable "GUI
+    Function" result already gets skipped elsewhere in this app.
+
+    Depth-capped (not just for pathological self-referential structures
+    -- ordinary recursion depth is already bounded by Python's own
+    limit -- but so a variable holding something absurdly deep doesn't
+    hang building a repr() no one could read anyway)."""
+    if _depth > _LITERAL_MAX_DEPTH:
+        raise ValueError("value nested too deeply to send as a literal")
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [_to_plain_literal(v, _depth + 1) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _to_plain_literal(v, _depth + 1) for k, v in value.items()}
+    if hasattr(value, "tolist"):  # numpy array (or anything duck-typed like one)
+        return _to_plain_literal(value.tolist(), _depth + 1)
+    if hasattr(value, "item") and not hasattr(value, "__len__"):
+        return _to_plain_literal(value.item(), _depth + 1)  # numpy scalar
+    raise TypeError(f"not a plain-data value: {type(value).__name__}")
+
+
+def _build_kernel_var_prelude(code, persisted_ns):
+    """Prelude lines (`name = <literal>`, one per variable) to prepend
+    to a script before sending it to Brep, for every name the script
+    reads but never itself assigns (see _free_names_in_script()) AND
+    that this app's own persistent kernel namespace actually has a
+    value for right now -- most commonly a "2D Sketch"-injected `sec`/
+    `path`/`rect`, but this covers anything a GUI Function or an
+    earlier, since-commented-out line left sitting in memory too, the
+    same "keeps a variable a prior run set" persistence this app's own
+    Python-mode kernel already gives a normal Render (see python_eval.py's
+    _save_persisted_vars() docstring) -- Brep starts a brand new kernel
+    with none of that history, so this is what carries it over.
+
+    REAL BUG FIX (user report: a script referencing a 2D-Sketch-drawn
+    `sec`/`path`/`rect` rendered fine in SanPyCAD -- where these names
+    were already sitting in the persistent kernel namespace from the
+    sketch panel, entirely outside the script's own visible text -- but
+    came back "NameError: name 'sec' is not defined" the moment the
+    exact same script text was sent to Brep's own, separate, brand-new
+    kernel, which never saw that injection at all).
+
+    Silently skips (doesn't error, doesn't warn) any free name that
+    either isn't currently in the persisted namespace (e.g. a genuine
+    typo/undefined-variable bug in the user's own script -- Brep will
+    raise the very same NameError SanPyCAD itself would have) or whose
+    value isn't plain literal data (e.g. it holds a Mesh/other object
+    that wouldn't mean anything to send as source text anyway)."""
+    free = _free_names_in_script(code)
+    lines = []
+    for name in sorted(free):
+        if name not in persisted_ns:
+            continue
+        try:
+            literal = _to_plain_literal(persisted_ns[name])
+        except (TypeError, ValueError):
+            continue
+        try:
+            text = repr(literal)
+        except Exception:
+            continue
+        lines.append(f"{name} = {text}")
+    return lines
 
 
 class Api:
@@ -180,6 +382,274 @@ class Api:
             with open(path, mode_flag, **({} if is_binary else {"encoding": "utf-8"})) as f:
                 f.write(data)
             return {"path": path}
+        except Exception as e:
+            traceback.print_exc()
+            return {"error": str(e)}
+
+    def pick_brep_app_path(self):
+        """Native file picker for locating an existing SanPyCAD-Brep
+        install -- used the first time 'Send to SanPyCAD-Brep' runs (or
+        whenever the user wants to point it somewhere else). Filtered
+        per platform to whatever actually launches that app: its .app
+        bundle on macOS, its .vbs/.bat launcher on Windows, or app.py
+        itself everywhere else (from-source installs, Linux). Persists
+        the choice immediately via brep_bridge.set_brep_app_path(), same
+        as pick_openscad_path()'s Settings-panel equivalent."""
+        try:
+            window = webview.windows[0]
+            open_dialog = getattr(getattr(webview, "FileDialog", None), "OPEN", None)
+            if open_dialog is None:
+                open_dialog = webview.OPEN_DIALOG  # older pywebview versions
+            if sys.platform == "darwin":
+                file_types = ("Applications (*.app)", "All files (*.*)")
+            elif sys.platform.startswith("win"):
+                file_types = ("SanPyCAD Brep launcher (*.vbs;*.bat)", "All files (*.*)")
+            else:
+                file_types = ("Python files (*.py)", "All files (*.*)")
+            chosen = window.create_file_dialog(open_dialog, file_types=file_types)
+            if not chosen:
+                return {"canceled": True}
+            path = chosen[0] if isinstance(chosen, (list, tuple)) else chosen
+            brep_bridge.set_brep_app_path(path)
+            return {"path": path}
+        except Exception as e:
+            traceback.print_exc()
+            return {"error": str(e)}
+
+    def send_to_brep(self, code, mode, csg_resolution, brep_path=None, selection=None):
+        """'Send to SanPyCAD-Brep': exports the INDIVIDUAL shape(s) a
+        script builds -- not whatever boolean/union of them ends up
+        shown -- as a real B-rep STEP file (one body per piece), then
+        launches a brand-new SanPyCAD-Brep process pointed at it (see
+        brep_bridge.launch_brep()) so each one can be opened there and
+        kept editing as its own real B-rep solid: filleted, chamfered,
+        booleaned with exact CSG, or exported to an exact STEP file of
+        its own -- none of which this mesh-based app can do.
+
+        Deliberately does NOT reuse export_file()'s "step" branch
+        (last_export_bodies(), i.e. whatever was passed to show()):
+        for a script like `a = cube(); b = cylinder(); c = a - b;
+        show(c)`, that would send only `c` -- the boolean RESULT,
+        already flattened to a faceted/"segmented" mesh the moment `-`
+        ran (booleans discard cross-section data), and useless to redo
+        anything exact with in Brep. python_eval.last_named_sols()
+        instead returns every top-level variable still holding a raw,
+        untouched, fully exact sol -- here, `a` and `b` themselves --
+        so Brep gets the real pre-boolean pieces to combine with its
+        own exact B-rep booleans, producing a clean result instead of
+        one built from an already-segmented import. Only falls back to
+        last_export_bodies()/the rendered mesh(es) (the old behavior)
+        when a run leaves no individual raw-sol variable at all (e.g.
+        a script built entirely from import_mesh()/booleans/OpenSCAD-
+        mode, with nothing exact left to send piece-by-piece) --
+        otherwise "Send to SanPyCAD Brep" would silently send nothing.
+
+        `brep_path`, if given, overrides (and persists, same as
+        pick_brep_app_path()) the remembered SanPyCAD-Brep location --
+        used when the frontend just asked the user to locate it via
+        pick_brep_app_path() and is now retrying this same call with
+        the answer. If neither that nor a previously-remembered path
+        exists, returns {"needs_path": True} instead of failing
+        outright, so the frontend can prompt once and retry rather
+        than just erroring.
+
+        `selection`, if given, is a {variable_name: kind} dict built from
+        the Variables panel's per-row "Send to Brep as..." choice, kind
+        one of "auto"/"solid"/"closed"/"surface" (see step_export.py's
+        sol_to_step_string() docstring for what each does). When given
+        and non-empty, ONLY those named variables are sent (in last_
+        named_sols() order) rather than every raw-sol variable in
+        memory, and each is exported using its own explicit kind instead
+        of geometry-based guessing -- this is what lets a genuine open
+        surface (swp_surf()) round-trip as one instead of silently
+        coming back as a solid, which geometry alone can't always tell
+        apart from a surface that happens to close up. Omitted/empty
+        selection keeps the old default: send every raw-sol variable,
+        auto-detected."""
+        try:
+            target = brep_path or brep_bridge.get_brep_app_path()
+            if not target:
+                return {"needs_path": True}
+            if brep_path:
+                brep_bridge.set_brep_app_path(brep_path)
+
+            csg_resolution = max(16, min(int(csg_resolution), 160))
+            result, _ev = server.run_any(code, csg_resolution, mode)
+            if result.get("error"):
+                return {"error": result["error"]}
+
+            import step_export as STEP
+            import python_eval as PE
+            bodies = list(PE.last_named_sols()) if mode == "python" else []
+            sent_pieces = bool(bodies)
+
+            # Preferred path: hand Brep the actual SCRIPT to re-run,
+            # instead of a STEP export/import round-trip. ocad.py is
+            # already flattened into Brep's own namespace and its
+            # swp()/swp_c()/swp_surf() build real B-rep shapes directly
+            # from the same section-grid data (see brep.py's "auto-
+            # promotion" wrappers) -- so re-running this exact script
+            # over there reproduces the shape natively, instantly, and
+            # exactly like typing it into Brep by hand, with none of a
+            # STEP file's size/speed cost or the smooth-fit-vs-faceted
+            # mismatch a re-tessellation can introduce. Only for
+            # mode=="python" (the only mode with real per-variable sols
+            # to select from in the first place; other modes fall
+            # through to the STEP-based path below unchanged).
+            if mode == "python":
+                wanted_names = None
+                if selection:
+                    wanted = {nm: k for nm, k in selection.items() if k}
+                    if wanted:
+                        wanted_names = [nm for nm, _obj in bodies if nm in wanted]
+                        if not wanted_names:
+                            return {"error": "none of the checked variables are still "
+                                              "available to send (they may not be raw "
+                                              "solids anymore -- re-render and try again)"}
+                        sent_pieces = True
+
+                # A "2D Sketch"-drawn sec/path/rect (or any other GUI-
+                # injected variable) lives only in THIS app's own
+                # persistent kernel namespace, invisible to the script's
+                # own text -- Brep's brand-new kernel needs those values
+                # carried over explicitly, or any reference to one raises
+                # a NameError there even though it renders fine here. See
+                # _build_kernel_var_prelude()'s own docstring.
+                prelude = _build_kernel_var_prelude(code, PE.get_persisted_namespace())
+                code_to_send = "\n".join(prelude + [code]) if prelude else code
+
+                brep_script = _build_brep_script(code_to_send, wanted_names)
+                n_bodies = len(wanted_names) if wanted_names else max(len(bodies), 1)
+
+                port = brep_bridge.find_running_instance()
+                if port is not None:
+                    try:
+                        resp = brep_bridge.send_to_running_instance(
+                            port, None, None, None, script_code=brep_script)
+                    except Exception:
+                        resp = None
+                    if resp and resp.get("ok"):
+                        return {"ok": True, "n_bodies": n_bodies, "n_exact": n_bodies,
+                                 "sent_pieces": sent_pieces, "reused_existing": True}
+                    # Fall through to spawning a new instance below.
+
+                fd, script_path = tempfile.mkstemp(
+                    suffix=".sanpycad_script.py", prefix="sanpycad_to_brep_")
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(brep_script)
+
+                try:
+                    brep_bridge.launch_brep(script_path, target)
+                except Exception as e:
+                    return {"error": f"Couldn't launch SanPyCAD Brep: {e}"}
+                return {"ok": True, "n_bodies": n_bodies, "n_exact": n_bodies,
+                         "sent_pieces": sent_pieces, "reused_existing": False}
+
+            if not bodies:
+                # No individual pre-boolean pieces survived this run --
+                # fall back to whatever was actually shown/rendered
+                # (same source "Export as STEP" uses) rather than
+                # sending nothing. This is the only path that can ever
+                # send an already-booleaned/faceted result.
+                bodies = list(PE.last_export_bodies()) if mode == "python" else []
+                if not bodies:
+                    meshes = list(server.ev_meshes_from_result(result))
+                    if not meshes:
+                        return {"error": "nothing to send (empty scene)"}
+                    bodies = [(f"body{i + 1}", (m.V, m.F))
+                              for i, m in enumerate(meshes)]
+
+            kinds = {}
+            if selection:
+                wanted = {nm: k for nm, k in selection.items() if k}
+                if wanted:
+                    filtered = [(nm, obj) for nm, obj in bodies if nm in wanted]
+                    if not filtered:
+                        return {"error": "none of the checked variables are still "
+                                          "available to send (they may not be raw "
+                                          "solids anymore -- re-render and try again)"}
+                    bodies = filtered
+                    kinds = wanted
+                    sent_pieces = True
+
+            try:
+                data = STEP.sol_to_step_string(bodies, name="sanpycad_model", kinds=kinds)
+            except STEP.StepExportError as e:
+                return {"error": f"STEP export failed: {e}"}
+            # The GROUND TRUTH of what each body actually got written as
+            # (solid vs. surface) -- not just what the user asked for, since
+            # an "auto" body's outcome depends on its own geometry. Brep
+            # needs this to reconstruct bodies correctly: splitting a multi-
+            # body STEP Compound back into named variables by walking
+            # .solids()/.children() alone can't tell a Solid from a Shell
+            # apart from geometry either, and silently drops/misassigns a
+            # Shell that shares a Compound with a Solid (the "sends 2, only
+            # 1 renders, no error" bug this fixes).
+            shape_kinds = STEP.last_shape_kinds()
+            n_exact = sum(1 for _n, k, _x in STEP.last_report() if k == "exact")
+            print(f"[send_to_brep] {len(bodies)} bodies "
+                  f"({n_exact} exact B-rep, {len(bodies) - n_exact} faceted, "
+                  f"{'individual pieces' if sent_pieces else 'shown/rendered result'})")
+
+            fd, step_path = tempfile.mkstemp(suffix=".step", prefix="sanpycad_to_brep_")
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(data)
+
+            # A small sidecar, same idea as the "2D Sketch" sidecar
+            # save_script() writes (<path>.sketch.json next to a saved
+            # script) -- the STEP file itself carries geometry only, so
+            # this is how SanPyCAD Brep's own app.py (see its
+            # _pending_import_from_env()) learns each body's ORIGINAL
+            # SanPyCAD variable name and can reuse it instead of
+            # renaming everything s1/s2/... A failure here is non-fatal
+            # (Brep just falls back to generic names) since the shapes
+            # themselves are already safely written.
+            names = [nm for nm, _ in bodies]
+
+            # Prefer handing this off to an ALREADY-RUNNING SanPyCAD-Brep
+            # instance over spawning a second process -- see
+            # brep_bridge.find_running_instance()'s own docstring for why
+            # a live HTTP POST is used here (the env-var handoff below
+            # only works at process startup). If a running instance is
+            # found but the live POST itself fails for some reason (e.g.
+            # it quit between the liveness check and the POST), fall
+            # through to the ordinary spawn-a-new-process path rather
+            # than erroring out -- the user still gets their shapes.
+            port = brep_bridge.find_running_instance()
+            if port is not None:
+                try:
+                    resp = brep_bridge.send_to_running_instance(
+                        port, step_path, names, shape_kinds)
+                except Exception:
+                    resp = None
+                if resp and resp.get("ok"):
+                    return {"ok": True, "n_bodies": len(bodies), "n_exact": n_exact,
+                             "sent_pieces": sent_pieces, "reused_existing": True}
+                # Fall through to spawning a new instance below.
+
+            # A small sidecar, same idea as the "2D Sketch" sidecar
+            # save_script() writes (<path>.sketch.json next to a saved
+            # script) -- the STEP file itself carries geometry only, so
+            # this is how SanPyCAD Brep's own app.py (see its
+            # _pending_import_from_env()) learns each body's ORIGINAL
+            # SanPyCAD variable name and can reuse it instead of
+            # renaming everything s1/s2/... A failure here is non-fatal
+            # (Brep just falls back to generic names) since the shapes
+            # themselves are already safely written. Only needed for
+            # this env-var/startup handoff path -- the live-instance
+            # path above sends `names` directly in its POST body.
+            try:
+                with open(step_path + ".names.json", "w", encoding="utf-8") as f:
+                    json.dump({"names": names, "shape_kinds": shape_kinds}, f)
+            except Exception:
+                pass
+
+            try:
+                brep_bridge.launch_brep(step_path, target)
+            except Exception as e:
+                return {"error": f"Couldn't launch SanPyCAD Brep: {e}"}
+            return {"ok": True, "n_bodies": len(bodies), "n_exact": n_exact,
+                     "sent_pieces": sent_pieces, "reused_existing": False}
         except Exception as e:
             traceback.print_exc()
             return {"error": str(e)}
@@ -522,9 +992,36 @@ def main():
     wait_for_server(url)
     print(f"[SanPyCAD] backend running at {url}")
 
+    def _fall_back_to_browser(reason):
+        """Shared fallback: the app server itself is fine either way, so a
+        pywebview failure is never fatal -- just less polished. Used both
+        when pywebview isn't installed at all, and when it's installed but
+        can't actually open a native window (e.g. on Windows, when the
+        .NET/WebView2 runtime pywebview's winforms backend depends on is
+        missing, blocked by antivirus, or otherwise broken on that
+        machine -- that shows up as a RuntimeError/clr_loader failure, not
+        an ImportError, which is why this is handled separately below)."""
+        print(reason)
+        webbrowser.open(url)
+        print("[SanPyCAD] press Ctrl+C here to stop the app")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
+
     try:
         global webview
         import webview
+    except ImportError:
+        _fall_back_to_browser(
+            "[SanPyCAD] pywebview not installed -- opening your default "
+            "browser instead. For a real app window, run: pip install pywebview"
+        )
+        httpd.shutdown()
+        return
+
+    try:
         api = Api()
         window = webview.create_window(
             "SanPyCAD", url, width=1400, height=900, min_size=(900, 600),
@@ -540,16 +1037,22 @@ def main():
         # normal use, so it's off unless explicitly asked for.
         debug_mode = bool(os.environ.get("SANPYCAD_DEBUG"))
         webview.start(debug=debug_mode)
-    except ImportError:
-        print("[SanPyCAD] pywebview not installed -- opening your default "
-              "browser instead. For a real app window, run: pip install pywebview")
-        webbrowser.open(url)
-        print("[SanPyCAD] press Ctrl+C here to stop the app")
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            pass
+    except Exception as exc:
+        # pywebview IS installed here, but failed to actually open a
+        # native window -- on Windows this is almost always its winforms
+        # backend failing to load the .NET/CLR runtime it needs (missing
+        # or broken .NET Framework / WebView2 Runtime, or an antivirus
+        # that quarantined part of the bundled pythonnet DLL). Rather
+        # than crashing with a raw traceback, fall back to the browser so
+        # the app is still usable, and say what's likely wrong.
+        _fall_back_to_browser(
+            f"[SanPyCAD] could not open the app window ({exc!r}) -- opening "
+            "your default browser instead. This usually means Windows is "
+            "missing (or has a broken) Microsoft Edge WebView2 Runtime or "
+            ".NET Framework install; installing/repairing WebView2 from "
+            "https://developer.microsoft.com/microsoft-edge/webview2/ "
+            "and relaunching SanPyCAD should restore the native window."
+        )
 
     httpd.shutdown()
 
