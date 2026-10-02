@@ -1,0 +1,26 @@
+# These are the same dependencies ocad.py already needs to import at
+# all -- if your library runs today, you already have them.
+# scipy is pinned below 1.14 for consistency with build_bundle.py's
+# install list, though the actual packaged-app crash this used to be
+# blamed on ("NameError: name 'obj' is not defined" deep in
+# scipy/stats/_distn_infrastructure.py) turned out to be unrelated to
+# scipy's version: it's a CPython 3.12.0 bug in code.replace() (fixed
+# in 3.12.1) triggered by PyInstaller's own path-anonymization step on
+# scipy's bytecode -- see packaging/_run_pyinstaller_patched.py for
+# the real fix and full writeup. Running from source (this
+# requirements.txt's normal use) was never affected either way.
+numpy
+scipy<1.14
+sympy
+scikit-image
+
+# Optional, for a real desktop app window instead of opening a browser tab:
+pywebview
+
+# Optional, for "Copy to clipboard" buttons to actually reach the OS
+# clipboard from inside that desktop window (its embedded webview blocks
+# the browser's own clipboard API by default -- see app.py's
+# copy_to_clipboard() for why). Without this installed, those buttons
+# still try the browser API as a fallback, which may or may not work
+# depending on your platform.
+pyperclip
