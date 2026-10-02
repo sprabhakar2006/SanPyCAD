@@ -28,7 +28,6 @@ download carries its own Python and every library it needs.
 | Platform | Download | Open it |
 |---|---|---|
 | macOS (Apple Silicon) | `SanPyCAD-mac-arm64.zip` | double-click `SanPyCAD.app` |
-| macOS (Intel) | `SanPyCAD-mac-intel.zip` | double-click `SanPyCAD.app` |
 | Windows 10/11 (x64) | `SanPyCAD-win-x64.zip` | open the folder, double-click `SanPyCAD.exe` |
 
 **First launch on macOS** shows "SanPyCAD cannot be opened because the
