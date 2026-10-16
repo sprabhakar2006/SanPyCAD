@@ -40,7 +40,7 @@ All builds are on the [releases page](https://github.com/sprabhakar2006/SanPyCAD
 
 > **Intel Mac or Linux?** There's no prebuilt bundle yet; [run it from source](#run-from-source) instead.
 
-**Optional, recommended:** install [OpenSCAD](https://openscad.org/downloads.html). SanPyCAD finds it automatically and uses its Manifold engine for exact, sharp boolean operations. Nothing else needs installing.
+Nothing else needs installing: the exact boolean engine (manifold3d) is bundled inside the app.
 
 ## Your first model
 
@@ -100,7 +100,7 @@ This is the workflow the tutorials follow:
 
 1. **Sketch the profile.** Open **▣ 2D Sketch**, draw the outline with lines, arcs, tangent arcs and rounded corners, and click **Send to SanPyCAD**. The profile lands in your script as a ready-to-use variable such as `sec1`. To sketch on an existing part, use **Sketch on Face** and click the face.
 2. **Make it 3D in Python.** `linear_extrude()`, `prism()`, sweeps along a path or a `helix()`, lofts between sections.
-3. **Combine.** `union()`, `difference()`, `intersection()`, `hull()`. With OpenSCAD installed these are exact.
+3. **Combine.** `union()`, `difference()`, `intersection()`, `hull()`. Booleans are exact (bundled manifold3d).
 4. **Check it.** Measure, add dimensions, or open the **Drawing** tab for front, top and side views.
 5. **Export, or carry on in B-rep.** Export STL for printing, or click **Send to SanPyCAD Brep** to fillet the edges you pick and export a true STEP file.
 
@@ -130,7 +130,7 @@ Four functions decide how a set of points becomes geometry, and they come up in 
 | `p_line3d(path, d)` | a round tube of diameter `d` along any 3D path |
 
 ### A real 2D sketcher
-Lines, arcs (3-point, centre and angles, tangent), circles, rectangles, N-gons, B-spline and Bezier curves, and `y = f(x)` function curves. Round or chamfer corners, trim, extend, offset, mirror, linear and rotated arrays, convex and concave hulls, and text converted to outlines. Import DXF or SVG, or trace over a reference image after setting its scale. Work in layers, then export DXF, SVG, PDF or Python, or send the sketch straight into your script.
+Lines, arcs (3-point, centre and angles, tangent), circles, rectangles, N-gons, B-spline and Bezier curves, and `y = f(x)` function curves. Round or chamfer corners, trim, extend, offset, mirror, linear and rotated arrays, convex and concave hulls, and text converted to outlines. Import DXF or SVG, or import a reference image, set its scale, and trace over it by hand or with **Auto-trace** (outline or centerline, with line/arc/circle fitting). Work in layers, then export DXF, SVG, PDF or Python, or send the sketch straight into your script.
 
 ### A notebook-style kernel
 - Variables persist between renders, so a slow step can run once, be commented out, and everything after it iterated on for free. **Reset Memory** starts clean.
@@ -139,7 +139,7 @@ Lines, arcs (3-point, centre and angles, tangent), circles, rectangles, N-gons, 
 - Find and Replace, resizable panes, and line wrap.
 
 ### Exact booleans
-If [OpenSCAD](https://openscad.org/downloads.html) is installed, SanPyCAD detects it and hands every boolean to its Manifold engine, so results are sharp and exact. Without OpenSCAD it falls back to a voxel and marching-cubes approximation, adjustable with the **CSG detail** slider. A toolbar badge always shows which one is active. If OpenSCAD is installed somewhere unusual, set `SANPYCAD_OPENSCAD_PATH` to the full path of the executable.
+Every `union()`, `difference()`, `intersection()` and `hull()` runs on the bundled [manifold3d](https://github.com/elalish/manifold) library, so results are sharp and exact with nothing to install. A toolbar badge shows the active engine. OpenSCAD is not required; the optional **OpenSCAD path** setting in the app is only used to render raw `fo()` `.scad` text.
 
 ### Measure, dimension, draw
 - **Measure** two vertices (distance plus x/y/z components) or two edges (lengths, angle, shortest distance). In Python mode a picked vertex also reports which point of which variable it came from, for example `sol1[0][10]`.
@@ -148,9 +148,11 @@ If [OpenSCAD](https://openscad.org/downloads.html) is installed, SanPyCAD detect
 
 ### Get models in and out
 - **Export:** STL, OBJ, SVG, DXF and STEP. STEP bodies are written as exact B-rep wherever the geometry still carries its cross-sections.
+- **Export many bodies at once:** `export_step(swp(s1), swp_c(s2), swp_surf(s3), *rotary_array, "/path/model1")` writes one STEP file per variable into the folder (lists of solids such as rotary arrays stay together under one name). Add `one_file=True` for a single assembly file.
 - **Import:** STL, OBJ and OFF meshes, and SVG outlines.
 - **Save:** scripts are plain `.py` or `.scad` text, openable in any editor.
 - **Send to SanPyCAD Brep:** pass the current shapes to [SanPyCAD Brep](https://github.com/sprabhakar2006/sanpycad-brep) to fillet and chamfer the edges you pick and export true STEP.
+- **From a script:** `export_sanpycad_brep(swp(s1), swp_c(fl1), swp_surf(s2))` sends those bodies (including grouped lists, kept under one name) straight to a running SanPyCAD Brep window.
 
 ## SanPyCAD and SanPyCAD Brep
 
@@ -159,7 +161,7 @@ The two apps are designed to be used together.
 | | **SanPyCAD** (this repo) | **[SanPyCAD Brep](https://github.com/sprabhakar2006/sanpycad-brep)** |
 |---|---|---|
 | Geometry | triangle mesh, built from point lists | exact B-rep (analytic and NURBS surfaces) |
-| Engine | ocad library + OpenSCAD (Manifold) | build123d on OpenCASCADE |
+| Engine | ocad library + manifold3d | build123d on OpenCASCADE |
 | Strong at | freeform and organic shapes, sweeps, wraps, waves, point-driven design | mechanical parts, fillets and chamfers on picked edges, CAD-ready STEP |
 | Script style | Python or OpenSCAD-style | Python |
 
@@ -170,7 +172,6 @@ A common pattern in the tutorials is to shape a part here, then click **Send to 
 - No 2D booleans. `linear_extrude` and `rotate_extrude` take a single outline; subtract a 3D shape from the extruded solid instead.
 - No `text()`, `surface()`, `minkowski()` or `render()` in OpenSCAD-style mode.
 - Simplified module scoping in OpenSCAD-style mode: a module sees its own parameters plus globals.
-- Without OpenSCAD installed, booleans are approximate (see [Exact booleans](#exact-booleans)).
 - Builds aren't signed or notarized yet, hence the first-launch warnings.
 
 The full list is in the [reference](docs/reference.md#known-limitations).
@@ -182,7 +183,7 @@ For development, or on an Intel Mac or Linux:
 ```bash
 git clone https://github.com/sprabhakar2006/SanPyCAD.git
 cd SanPyCAD
-pip install numpy scipy sympy scikit-image pywebview pyperclip
+pip install numpy scipy sympy scikit-image manifold3d pywebview pyperclip
 python app.py
 ```
 
@@ -212,7 +213,7 @@ The packaged app keeps its settings, log (`SanPyCAD.log`) and `imports/` folder 
 
 Created by **Sanjeev Prabhakar**. The ocad geometry library, bundled in `backend/`, does the modeling work: every primitive, fillet, offset, sweep and hull. SanPyCAD is the editor, viewer, sketcher and language layer around it.
 
-Built with [OpenSCAD](https://openscad.org/) (optional, for exact booleans), [CodeMirror](https://codemirror.net/) and [Three.js](https://threejs.org/).
+Built with [manifold3d](https://github.com/elalish/manifold), [CodeMirror](https://codemirror.net/) and [Three.js](https://threejs.org/).
 
 ## License
 
