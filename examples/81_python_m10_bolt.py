@@ -43,7 +43,7 @@ ey=l_(concatenate([e3,e4,e5,e6,e7,e8,e9]))
 # OpenSCAD's difference() only keeps its very FIRST child as the base --
 # every other child (including later for-loop iterations) is subtracted,
 # not unioned. So only s1 is the base; s5,s2,s3,s4,s6-s9,e1,e2,ey are all
-# subtracted from it, matching the original fo() text exactly.
+# subtracted from it.
 show(
 union(
 difference(

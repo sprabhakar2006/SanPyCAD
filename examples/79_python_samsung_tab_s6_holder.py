@@ -4,7 +4,7 @@
 # radius] triples using explicit cos()/sin() offsets) forms the holder's
 # frame, linear_extrude()'d and then relieved with an inner offset() before
 # several prism() ribs/clips are added back with a mix of union and
-# difference in the native OpenSCAD text passed to fo().
+# difference.
 
 sec=corner_radius(pts1([[0,0,.1],[124,0,3],[27*cos(45*pi/180),27*sin(45*pi/180),1],
              [15*cos(135*pi/180),15*sin(135*pi/180),1],

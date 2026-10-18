@@ -30,13 +30,7 @@ pl2=translate([0,60,0],plane_from_equation([1,0,0,60],[20,20]))
 a=nlos(pl1,sol4[0])
 b=nlos(pl2,sol4[-1])
 sol4=[a]+sol4+[b]
-# OpenSCAD's difference()/intersection() only keep their FIRST child as
-# a single item -- every subsequent child (including later for-loop
-# iterations) is a separate operand, not auto-unioned. The original fo()
-# text had no explicit union() wrapping [sol1,sol2] or [s2,s3,s4,s5], so
-# this is sol1-sol2-sol4 and sol3 INTERSECTED individually with each of
-# s2,s3,s4,s5 (not sol3 intersected with their union).
 show(
-difference(swp(sol1),swp(sol2),swp(sol4)),
-intersection(swp(sol3),swp(s2),swp(s3),swp(s4),swp(s5)),
+difference(union(swp(sol1),swp(sol2)),swp(sol4)),
+intersection(swp(sol3), union(*[swp(p) for p in [s2,s3,s4,s5]])),
 )

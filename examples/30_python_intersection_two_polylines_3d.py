@@ -13,9 +13,3 @@ color(swp_surf(s1),alpha=0.3),
 *[color(p_line3d(p,.3),"blue") for p in [l1,l2]],
 color(points([p0[1]],.5),"magenta"),
 )
-# track_points() labels each point with its index via real OpenSCAD
-# text()/linear_extrude() -- no Python-mode equivalent yet, so this one
-# small piece still needs fo().
-fo(f'''
-{track_points(p0)}
-''')

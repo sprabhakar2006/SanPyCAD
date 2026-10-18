@@ -1,9 +1,9 @@
 # Lamp shade
 # Real project from the ocad examples notebook.
 # Builds one tapered strand along a bezier() path with axis_rot() twisting
-# it around the path's own tangent, then uses native OpenSCAD text inside
-# fo() to array copies (rotate + mirror) around a full circle to form the
-# radial strand pattern, capped by a ring base.
+# it around the path's own tangent, then array-copies it (rotate + mirror)
+# around a full circle to form the radial strand pattern, capped by a
+# ring base.
 
 n=20 #number of strands in the lamp
 t=5 # thickness of each strand

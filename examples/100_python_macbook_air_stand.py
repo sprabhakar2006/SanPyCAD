@@ -5,8 +5,7 @@
 # segment with surface_from_4_lines() for straight runs and slice_sol()
 # for the curved runs, and finally end_cap() closes the open ends.
 # The final cut is plain Python -- show(difference(swp(sol1), *[swp_c(p)
-# for p in e1])) -- instead of fo() text, now that swp()/swp_c() shapes
-# carry real OpenSCAD geometry through difference() automatically.
+# for p in e1])).
 
 a=cr2dt([[0,5,2.4],[0,-5,2.4],[160,0,2.4],[0,5,2.4],[7,0,2.4]@zrot(120),[5,0,2.4]@zrot(210),
         [4.1,0,.75]@zrot(300),[-15,0,5],[50,0,2.4]@zrot(150),[5,0,2.4]@zrot(240),
